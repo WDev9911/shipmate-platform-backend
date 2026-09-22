@@ -1,0 +1,6 @@
+@ShipMate.API_HostAddress = http://localhost:5140
+
+GET {{ShipMate.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

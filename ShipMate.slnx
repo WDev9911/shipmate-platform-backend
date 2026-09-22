@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="ShipMate.API/ShipMate.API.csproj" />
+  <Project Path="ShipMate.Application/ShipMate.Application.csproj" />
+  <Project Path="ShipMate.Domain/ShipMate.Domain.csproj" />
+  <Project Path="ShipMate.Infrastructure/ShipMate.Infrastructure.csproj" />
+</Solution>
