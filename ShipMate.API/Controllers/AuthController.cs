@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ShipMate.Application.DTOs.Auth;
 using ShipMate.Application.Exceptions;
@@ -15,12 +16,21 @@ public class AuthController : ControllerBase
 
     private readonly IAuthService _authService;
     private readonly IOAuthHandoffStore _oauthHandoffStore;
+    private readonly IGitHubConnectStateStore _gitHubConnectStateStore;
+    private readonly ICurrentUserService _currentUserService;
     private readonly IConfiguration _configuration;
 
-    public AuthController(IAuthService authService, IOAuthHandoffStore oauthHandoffStore, IConfiguration configuration)
+    public AuthController(
+        IAuthService authService,
+        IOAuthHandoffStore oauthHandoffStore,
+        IGitHubConnectStateStore gitHubConnectStateStore,
+        ICurrentUserService currentUserService,
+        IConfiguration configuration)
     {
         _authService = authService;
         _oauthHandoffStore = oauthHandoffStore;
+        _gitHubConnectStateStore = gitHubConnectStateStore;
+        _currentUserService = currentUserService;
         _configuration = configuration;
     }
 
@@ -62,28 +72,20 @@ public class AuthController : ControllerBase
     [HttpGet("github/login-url")]
     public IActionResult GetGitHubLoginUrl()
     {
-        var (state, _) = SecureTokenGenerator.GenerateTokenPair();
+        var state = CreateGitHubStateCookie();
+        return Ok(new { url = BuildGitHubAuthorizeUrl(state) });
+    }
 
-        Response.Cookies.Append(GitHubStateCookieName, state, new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.Lax,
-            Expires = DateTimeOffset.UtcNow.AddMinutes(10),
-            Path = "/api/auth/github"
-        });
-
-        var clientId = _configuration["GitHub:ClientId"];
-        var redirectUri = _configuration["GitHub:RedirectUri"];
-        var scope = Uri.EscapeDataString("read:user user:email");
-
-        var url = "https://github.com/login/oauth/authorize"
-            + $"?client_id={clientId}"
-            + $"&redirect_uri={Uri.EscapeDataString(redirectUri!)}"
-            + $"&scope={scope}"
-            + $"&state={state}";
-
-        return Ok(new { url });
+    // Same GitHub OAuth App / callback URL as login, but the state is pre-registered against the
+    // current user's id, so the shared callback below can link the result to this account instead
+    // of treating it as a login attempt.
+    [HttpGet("github/connect-url")]
+    [Authorize]
+    public IActionResult GetGitHubConnectUrl()
+    {
+        var state = CreateGitHubStateCookie();
+        _gitHubConnectStateStore.Create(state, _currentUserService.UserId!.Value);
+        return Ok(new { url = BuildGitHubAuthorizeUrl(state) });
     }
 
     [HttpGet("github/callback")]
@@ -99,6 +101,21 @@ public class AuthController : ControllerBase
             return Redirect($"{frontendUrl}/login?error=invalid_state");
         }
 
+        var connectUserId = _gitHubConnectStateStore.Consume(state);
+
+        if (connectUserId is not null)
+        {
+            try
+            {
+                await _authService.ConnectGitHubAsync(connectUserId.Value, code);
+                return Redirect($"{frontendUrl}/settings?github=connected");
+            }
+            catch (AppException ex)
+            {
+                return Redirect($"{frontendUrl}/settings?error={ex.ErrorCode}");
+            }
+        }
+
         try
         {
             var deviceInfo = Request.Headers.UserAgent.ToString();
@@ -110,6 +127,43 @@ public class AuthController : ControllerBase
         {
             return Redirect($"{frontendUrl}/login?error={ex.ErrorCode}");
         }
+    }
+
+    [HttpDelete("github/connection")]
+    [Authorize]
+    public async Task<IActionResult> DisconnectGitHub()
+    {
+        await _authService.DisconnectGitHubAsync(_currentUserService.UserId!.Value);
+        return NoContent();
+    }
+
+    private string CreateGitHubStateCookie()
+    {
+        var (state, _) = SecureTokenGenerator.GenerateTokenPair();
+
+        Response.Cookies.Append(GitHubStateCookieName, state, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Lax,
+            Expires = DateTimeOffset.UtcNow.AddMinutes(10),
+            Path = "/api/auth/github"
+        });
+
+        return state;
+    }
+
+    private string BuildGitHubAuthorizeUrl(string state)
+    {
+        var clientId = _configuration["GitHub:ClientId"];
+        var redirectUri = _configuration["GitHub:RedirectUri"];
+        var scope = Uri.EscapeDataString("read:user user:email repo");
+
+        return "https://github.com/login/oauth/authorize"
+            + $"?client_id={clientId}"
+            + $"&redirect_uri={Uri.EscapeDataString(redirectUri!)}"
+            + $"&scope={scope}"
+            + $"&state={state}";
     }
 
     [HttpPost("github/exchange")]

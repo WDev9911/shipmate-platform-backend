@@ -14,6 +14,9 @@ public class AppDbContext : DbContext
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<EmailVerificationToken> EmailVerificationTokens => Set<EmailVerificationToken>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+    public DbSet<AdminActionLog> AdminActionLogs => Set<AdminActionLog>();
+    public DbSet<Workspace> Workspaces => Set<Workspace>();
+    public DbSet<WorkspaceMember> WorkspaceMembers => Set<WorkspaceMember>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

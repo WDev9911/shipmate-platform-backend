@@ -23,4 +23,10 @@ public class RefreshTokenRepository : IRefreshTokenRepository
         await _context.RefreshTokens
             .Where(t => t.UserId == userId && t.RevokedAt == null && t.ExpiresAt > DateTime.UtcNow)
             .ToListAsync();
+
+    public async Task<List<RefreshToken>> GetAllByUserIdAsync(Guid userId) =>
+        await _context.RefreshTokens
+            .Where(t => t.UserId == userId)
+            .OrderByDescending(t => t.CreatedAt)
+            .ToListAsync();
 }

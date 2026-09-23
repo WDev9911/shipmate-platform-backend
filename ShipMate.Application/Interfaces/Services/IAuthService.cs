@@ -9,6 +9,8 @@ public interface IAuthService
     Task ResendVerificationAsync(ResendVerificationRequest request);
     Task<AuthResponse> LoginAsync(LoginRequest request, string? deviceInfo);
     Task<AuthResponse> GitHubLoginAsync(string code, string? deviceInfo);
+    Task ConnectGitHubAsync(Guid userId, string code);
+    Task DisconnectGitHubAsync(Guid userId);
     Task<AuthResponse> RefreshTokenAsync(string refreshToken);
     Task LogoutAsync(string refreshToken);
     Task ForgotPasswordAsync(ForgotPasswordRequest request);

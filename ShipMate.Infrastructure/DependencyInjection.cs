@@ -24,13 +24,20 @@ public static class DependencyInjection
         services.AddScoped<IPasswordResetTokenRepository, PasswordResetTokenRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IGitHubConnectionRepository, GitHubConnectionRepository>();
+        services.AddScoped<IAdminActionLogRepository, AdminActionLogRepository>();
+        services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
+        services.AddScoped<IWorkspaceMemberRepository, WorkspaceMemberRepository>();
 
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddSingleton<IEncryptionService, EncryptionService>();
 
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentUserService, CurrentUserService>();
+
         services.AddMemoryCache();
         services.AddSingleton<IOAuthHandoffStore, OAuthHandoffStore>();
+        services.AddSingleton<IGitHubConnectStateStore, GitHubConnectStateStore>();
 
         services.AddHttpClient<IEmailSender, ResendEmailSender>(client =>
         {

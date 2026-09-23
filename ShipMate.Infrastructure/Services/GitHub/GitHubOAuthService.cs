@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Configuration;
 using ShipMate.Application.DTOs.Auth;
+using ShipMate.Application.DTOs.Workspaces;
 using ShipMate.Application.Exceptions;
 using ShipMate.Application.Interfaces.Services;
 
@@ -77,6 +78,20 @@ public class GitHubOAuthService : IGitHubOAuthService
             AvatarUrl = profile.AvatarUrl,
             Name = profile.Name
         };
+    }
+
+    public async Task<List<GitHubRepoDto>> GetUserRepositoriesAsync(string accessToken)
+    {
+        var repos = await SendGitHubApiRequestAsync<List<GitHubRepoPayload>>(
+            "https://api.github.com/user/repos?per_page=100&sort=updated", accessToken) ?? [];
+
+        return repos.Select(r => new GitHubRepoDto
+        {
+            Owner = r.Owner.Login,
+            Name = r.Name,
+            IsPrivate = r.Private,
+            DefaultBranch = r.DefaultBranch
+        }).ToList();
     }
 
     private async Task<T?> SendGitHubApiRequestAsync<T>(string url, string accessToken)

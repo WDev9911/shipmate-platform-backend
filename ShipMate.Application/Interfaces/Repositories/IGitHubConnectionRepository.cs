@@ -7,4 +7,5 @@ public interface IGitHubConnectionRepository
     Task<GitHubConnection?> GetByUserIdAsync(Guid userId);
     Task AddAsync(GitHubConnection connection);
     void Update(GitHubConnection connection);
+    void Remove(GitHubConnection connection);
 }
