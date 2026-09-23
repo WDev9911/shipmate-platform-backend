@@ -14,3 +14,16 @@ obj/
 ## Build results
 [Dd]ebug/
 [Rr]elease/
+
+## Secrets & environment (không commit key/credential thật)
+.env
+.env.*
+appsettings.Development.json
+appsettings.*.local.json
+appsettings.Production.json
+*.pfx
+*.pem
+*.key
+*.p12
+secrets.json
+*-credentials.json
