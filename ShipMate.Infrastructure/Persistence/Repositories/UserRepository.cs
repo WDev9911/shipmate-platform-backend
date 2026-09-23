@@ -22,6 +22,19 @@ public class UserRepository : IUserRepository
     public async Task<User?> GetByGitHubIdAsync(string githubId) =>
         await _context.Users.FirstOrDefaultAsync(u => u.GitHubId == githubId);
 
+    public async Task<(List<User> Items, int TotalCount)> GetPagedAsync(int page, int pageSize)
+    {
+        var query = _context.Users.OrderByDescending(u => u.CreatedAt);
+
+        var totalCount = await query.CountAsync();
+        var items = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return (items, totalCount);
+    }
+
     public async Task AddAsync(User user) =>
         await _context.Users.AddAsync(user);
 

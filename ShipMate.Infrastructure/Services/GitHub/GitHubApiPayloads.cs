@@ -55,3 +55,24 @@ internal class GitHubEmailPayload
     [JsonPropertyName("verified")]
     public bool Verified { get; set; }
 }
+
+internal class GitHubRepoPayload
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("private")]
+    public bool Private { get; set; }
+
+    [JsonPropertyName("default_branch")]
+    public string DefaultBranch { get; set; } = string.Empty;
+
+    [JsonPropertyName("owner")]
+    public GitHubRepoOwnerPayload Owner { get; set; } = new();
+}
+
+internal class GitHubRepoOwnerPayload
+{
+    [JsonPropertyName("login")]
+    public string Login { get; set; } = string.Empty;
+}

@@ -18,7 +18,7 @@ public class GlobalExceptionHandler : IExceptionHandler
 
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
-        var (statusCode, title) = MapException(exception);
+        var (statusCode, title, detail) = MapException(exception);
 
         _logger.LogError(exception, "Unhandled exception occurred: {Message}", exception.Message);
 
@@ -26,7 +26,7 @@ public class GlobalExceptionHandler : IExceptionHandler
         {
             Status = statusCode,
             Title = title,
-            Detail = exception.Message,
+            Detail = detail,
             Instance = httpContext.Request.Path
         };
 
@@ -52,11 +52,16 @@ public class GlobalExceptionHandler : IExceptionHandler
         });
     }
 
-    private static (int StatusCode, string Title) MapException(Exception exception) => exception switch
+    // For known/expected exception types, the message is safe (and useful) to return as-is —
+    // it was written for the client. For anything else, the real message might leak internal
+    // details (which downstream service failed, connection strings, stack info...), so only
+    // a generic detail goes to the client; the real exception.Message is still logged above.
+    private static (int StatusCode, string Title, string Detail) MapException(Exception exception) => exception switch
     {
-        NotFoundException => (StatusCodes.Status404NotFound, "Resource not found"),
-        AppException appException => (appException.StatusCode, "Bad request"),
-        ValidationException => (StatusCodes.Status400BadRequest, "Invalid data"),
-        _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred")
+        NotFoundException e => (StatusCodes.Status404NotFound, "Resource not found", e.Message),
+        AppException e => (e.StatusCode, "Bad request", e.Message),
+        ValidationException e => (StatusCodes.Status400BadRequest, "Invalid data", e.Message),
+        _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred",
+              "Something went wrong on our end. Please try again later.")
     };
 }

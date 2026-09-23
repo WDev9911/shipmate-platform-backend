@@ -17,6 +17,7 @@ public class AuthService : IAuthService
     private readonly IPasswordResetTokenRepository _passwordResetTokenRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IGitHubConnectionRepository _gitHubConnectionRepository;
+    private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IEmailSender _emailSender;
     private readonly IJwtTokenService _jwtTokenService;
@@ -31,6 +32,7 @@ public class AuthService : IAuthService
         IPasswordResetTokenRepository passwordResetTokenRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IGitHubConnectionRepository gitHubConnectionRepository,
+        IWorkspaceRepository workspaceRepository,
         IPasswordHasher passwordHasher,
         IEmailSender emailSender,
         IJwtTokenService jwtTokenService,
@@ -44,6 +46,7 @@ public class AuthService : IAuthService
         _passwordResetTokenRepository = passwordResetTokenRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _gitHubConnectionRepository = gitHubConnectionRepository;
+        _workspaceRepository = workspaceRepository;
         _passwordHasher = passwordHasher;
         _emailSender = emailSender;
         _jwtTokenService = jwtTokenService;
@@ -250,17 +253,87 @@ public class AuthService : IAuthService
             _userRepository.Update(user);
         }
 
+        await UpsertGitHubConnectionAsync(user.Id, githubToken);
+        await _userRepository.SaveChangesAsync();
+
+        return await IssueTokensAsync(user, deviceInfo);
+    }
+
+    public async Task ConnectGitHubAsync(Guid userId, string code)
+    {
+        var githubToken = await _gitHubOAuthService.ExchangeCodeAsync(code);
+        var profile = await _gitHubOAuthService.GetUserProfileAsync(githubToken.AccessToken);
+
+        var owner = await _userRepository.GetByGitHubIdAsync(profile.GitHubId);
+        if (owner is not null && owner.Id != userId)
+        {
+            throw new GitHubAccountAlreadyLinkedException();
+        }
+
+        var user = await _userRepository.GetByIdAsync(userId)
+            ?? throw new NotFoundException(nameof(User), userId);
+
+        user.GitHubId = profile.GitHubId;
+        user.GitHubUsername = profile.Username;
+        user.AvatarUrl = profile.AvatarUrl;
+        user.UpdatedAt = DateTime.UtcNow;
+        _userRepository.Update(user);
+
+        await UpsertGitHubConnectionAsync(userId, githubToken);
+        await _userRepository.SaveChangesAsync();
+
+        await _emailSender.SendAsync(
+            user.Email,
+            "Your GitHub account has been linked",
+            $"""
+             <p>Hi {user.DisplayName},</p>
+             <p>Your ShipMate account was just linked to GitHub (@{profile.Username}).</p>
+             <p>If this wasn't you, please secure your account immediately.</p>
+             """);
+    }
+
+    public async Task DisconnectGitHubAsync(Guid userId)
+    {
+        var user = await _userRepository.GetByIdAsync(userId)
+            ?? throw new NotFoundException(nameof(User), userId);
+
+        if (!user.HasPassword)
+        {
+            throw new GitHubDisconnectRequiresPasswordException();
+        }
+
+        if (await _workspaceRepository.HasManagedWorkspaceWithLinkedGitHubRepoAsync(userId))
+        {
+            throw new GitHubDisconnectBlockedByLinkedWorkspacesException();
+        }
+
+        user.GitHubId = null;
+        user.GitHubUsername = null;
+        user.UpdatedAt = DateTime.UtcNow;
+        _userRepository.Update(user);
+
+        var connection = await _gitHubConnectionRepository.GetByUserIdAsync(userId);
+        if (connection is not null)
+        {
+            _gitHubConnectionRepository.Remove(connection);
+        }
+
+        await _userRepository.SaveChangesAsync();
+    }
+
+    private async Task UpsertGitHubConnectionAsync(Guid userId, GitHubTokenResult githubToken)
+    {
         var encryptedAccessToken = _encryptionService.Encrypt(githubToken.AccessToken);
         var encryptedRefreshToken = githubToken.RefreshToken is not null
             ? _encryptionService.Encrypt(githubToken.RefreshToken)
             : null;
 
-        var connection = await _gitHubConnectionRepository.GetByUserIdAsync(user.Id);
+        var connection = await _gitHubConnectionRepository.GetByUserIdAsync(userId);
         if (connection is null)
         {
             connection = new GitHubConnection
             {
-                UserId = user.Id,
+                UserId = userId,
                 GitHubAccessTokenEncrypted = encryptedAccessToken,
                 AccessTokenExpiresAt = githubToken.ExpiresAt,
                 RefreshTokenEncrypted = encryptedRefreshToken,
@@ -280,10 +353,6 @@ public class AuthService : IAuthService
             connection.RevokedAt = null;
             _gitHubConnectionRepository.Update(connection);
         }
-
-        await _userRepository.SaveChangesAsync();
-
-        return await IssueTokensAsync(user, deviceInfo);
     }
 
     public async Task<AuthResponse> RefreshTokenAsync(string refreshToken)

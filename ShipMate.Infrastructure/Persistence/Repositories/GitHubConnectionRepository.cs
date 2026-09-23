@@ -21,4 +21,7 @@ public class GitHubConnectionRepository : IGitHubConnectionRepository
 
     public void Update(GitHubConnection connection) =>
         _context.GitHubConnections.Update(connection);
+
+    public void Remove(GitHubConnection connection) =>
+        _context.GitHubConnections.Remove(connection);
 }
