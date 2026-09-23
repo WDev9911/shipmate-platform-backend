@@ -37,6 +37,11 @@ public class GlobalExceptionHandler : IExceptionHandler
                 .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray());
         }
 
+        if (exception is AppException appException)
+        {
+            problemDetails.Extensions["errorCode"] = appException.ErrorCode;
+        }
+
         httpContext.Response.StatusCode = statusCode;
 
         return await _problemDetailsService.TryWriteAsync(new ProblemDetailsContext
@@ -49,8 +54,9 @@ public class GlobalExceptionHandler : IExceptionHandler
 
     private static (int StatusCode, string Title) MapException(Exception exception) => exception switch
     {
-        NotFoundException => (StatusCodes.Status404NotFound, "Không tìm thấy tài nguyên"),
-        ValidationException => (StatusCodes.Status400BadRequest, "Dữ liệu không hợp lệ"),
-        _ => (StatusCodes.Status500InternalServerError, "Đã xảy ra lỗi không xác định")
+        NotFoundException => (StatusCodes.Status404NotFound, "Resource not found"),
+        AppException appException => (appException.StatusCode, "Bad request"),
+        ValidationException => (StatusCodes.Status400BadRequest, "Invalid data"),
+        _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred")
     };
 }
