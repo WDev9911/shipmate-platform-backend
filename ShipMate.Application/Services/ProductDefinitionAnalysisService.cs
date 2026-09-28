@@ -44,8 +44,8 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
         _logger = logger;
     }
 
-    public async Task<ProductDefinitionDto> AnalyzeAsync(
-        Guid userId, Guid workspaceId, CancellationToken cancellationToken = default)
+    public async Task<AnalyzeProductDefinitionResponse> AnalyzeAsync(
+        Guid userId, Guid workspaceId, AnalyzeProductDefinitionRequest? request, CancellationToken cancellationToken = default)
     {
         var workspace = await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
@@ -59,28 +59,26 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
             };
             await _productDefinitionRepository.AddAsync(productDefinition);
         }
-        else if (await _productDefinitionRepository.HasSuccessfulAnalysisRunAsync(productDefinition.Id))
-        {
-            // Re-running (DEFINE step 5b) must preserve the developer's decisions — that's milestone M8.
-            throw new ProductDefinitionAlreadyAnalyzedException();
-        }
 
-        var committedFeatures = productDefinition.Features
-            .Where(f => f.Origin == FeatureOrigin.FromCommittedList)
-            .OrderBy(f => f.Position)
-            .ToList();
+        var isReanalysis = await _productDefinitionRepository.HasSuccessfulAnalysisRunAsync(productDefinition.Id);
+        var features = productDefinition.Features.OrderBy(f => f.Position).ToList();
 
         var input = new DefineAnalysisInput
         {
             VisionPrompt = workspace.VisionPrompt,
-            CommittedFeatures = committedFeatures
+            CommittedFeatures = features
+                .Where(f => f.Origin == FeatureOrigin.FromCommittedList)
                 .Select(f => new DefineCommittedFeatureInput
                 {
                     Id = f.Id.ToString(),
                     Name = f.Name,
                     Description = f.Description
                 })
-                .ToList()
+                .ToList(),
+            ExistingFeatures = isReanalysis ? features.Select(ToExistingFeatureInput).ToList() : [],
+            CurrentPersona = isReanalysis ? ToPersonaInput(productDefinition.LockedPersona) : null,
+            Instruction = request?.Instruction,
+            ReassessPersona = request?.ReassessPersona ?? false
         };
 
         var run = new AiAnalysisRun
@@ -92,21 +90,31 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
         };
         await _productDefinitionRepository.AddAnalysisRunAsync(run);
 
-        var output = await RequestAnalysisAsync(input, run, cancellationToken);
+        var keptFeatureIds = features
+            .Where(f => !FeatureRegenerationPolicy.CanRegenerate(f))
+            .Select(f => f.Id.ToString())
+            .ToList();
 
-        await ApplyOutputAsync(productDefinition, committedFeatures, output);
+        var output = await RequestAnalysisAsync(input, keptFeatureIds, run, cancellationToken);
+
+        var removedDependencies = await ApplyOutputAsync(productDefinition, features, output);
 
         run.Succeeded = true;
         productDefinition.MarkModified(DateTime.UtcNow);
         await _productDefinitionRepository.SaveChangesAsync();
 
-        return _mapper.Map<ProductDefinitionDto>(productDefinition);
+        return new AnalyzeProductDefinitionResponse
+        {
+            ProductDefinition = _mapper.Map<ProductDefinitionDto>(productDefinition),
+            RemovedDependencies = removedDependencies
+        };
     }
 
     // Calls the AI and returns a validated result. Every failure is recorded on the run before rethrowing,
     // so a failed attempt is still traceable, but no feature is ever saved from a bad result.
     private async Task<DefineAnalysisOutput> RequestAnalysisAsync(
-        DefineAnalysisInput input, AiAnalysisRun run, CancellationToken cancellationToken)
+        DefineAnalysisInput input, IReadOnlyCollection<string> keptFeatureIds, AiAnalysisRun run,
+        CancellationToken cancellationToken)
     {
         AiJsonResponse response;
         try
@@ -134,7 +142,8 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
             output = JsonSerializer.Deserialize<DefineAnalysisOutput>(response.Json, AiJson.Options);
             errors = output is null
                 ? ["The AI returned an empty result."]
-                : DefineAnalysisOutputValidator.Validate(output, input.CommittedFeatures.Select(f => f.Id).ToList());
+                : DefineAnalysisOutputValidator.Validate(
+                    output, input.CommittedFeatures.Select(f => f.Id).ToList(), keptFeatureIds);
         }
         catch (JsonException ex)
         {
@@ -159,8 +168,10 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
         await _productDefinitionRepository.SaveChangesAsync();
     }
 
-    private async Task ApplyOutputAsync(
-        ProductDefinition productDefinition, List<Feature> committedFeatures, DefineAnalysisOutput output)
+    // DEFINE step 5b. A first analysis is simply the case where only committed features exist and none is
+    // regenerable, so one merge handles both.
+    private async Task<List<RemovedDependencyDto>> ApplyOutputAsync(
+        ProductDefinition productDefinition, List<Feature> features, DefineAnalysisOutput output)
     {
         productDefinition.LockedPersona = new LockedPersona
         {
@@ -174,60 +185,199 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
         productDefinition.Solution = output.ProblemSolution.Solution;
 
         var now = DateTime.UtcNow;
-        var committedById = committedFeatures.ToDictionary(f => f.Id.ToString(), StringComparer.OrdinalIgnoreCase);
-        var featuresByAiId = new Dictionary<string, Feature>(StringComparer.OrdinalIgnoreCase);
+        var committedById = features
+            .Where(f => f.Origin == FeatureOrigin.FromCommittedList)
+            .ToDictionary(f => f.Id.ToString(), StringComparer.OrdinalIgnoreCase);
+        var keptById = features
+            .Where(f => !FeatureRegenerationPolicy.CanRegenerate(f))
+            .ToDictionary(f => f.Id.ToString(), StringComparer.OrdinalIgnoreCase);
+        var regenerableById = features
+            .Where(FeatureRegenerationPolicy.CanRegenerate)
+            .ToDictionary(f => f.Id.ToString(), StringComparer.OrdinalIgnoreCase);
+
+        // Kept features are referenceable even when the AI leaves them out of its output.
+        var featuresByAiId = new Dictionary<string, Feature>(keptById, StringComparer.OrdinalIgnoreCase);
         var position = productDefinition.NextFeaturePosition();
 
         foreach (var item in output.Features)
         {
-            if (committedById.TryGetValue(item.Id, out var committed))
+            if (keptById.TryGetValue(item.Id, out var kept))
             {
-                // Only the AI's judgement is taken; the agreed content (name, description, status) stays as entered.
-                committed.Role = item.Role;
-                committed.AiVerdict = item.AiAssessment.Verdict;
-                committed.AiReason = item.AiAssessment.Reason;
-                committed.PersonaConflict = item.PersonaConflict;
-                committed.PersonaConflictReason = item.PersonaConflict ? item.PersonaConflictReason : null;
-                committed.UpdatedAt = now;
-                featuresByAiId[item.Id] = committed;
+                ApplyToKeptFeature(kept, item, committedById);
+                kept.UpdatedAt = now;
                 continue;
             }
 
-            var sources = new List<FeatureOrigin> { item.Origin };
-            var origin = FeatureOriginPolicy.Resolve(sources);
+            if (regenerableById.Remove(item.Id, out var regenerated))
+            {
+                ApplyAiContent(regenerated, item, committedById);
+                regenerated.UpdatedAt = now;
+                featuresByAiId[item.Id] = regenerated;
+                continue;
+            }
 
             var feature = new Feature
             {
                 ProductDefinitionId = productDefinition.Id,
-                Name = item.Name,
-                Description = item.Description,
-                Scope = item.Scope,
-                Role = item.Role,
-                Sources = sources,
-                Origin = origin,
-                AiVerdict = item.AiAssessment.Verdict,
-                AiReason = item.AiAssessment.Reason,
-                Status = FeatureStatusPolicy.DefaultFor(origin, item.AiAssessment.Verdict),
-                PossibleDuplicate = item.PossibleDuplicate,
-                DuplicateOfId = item.PossibleDuplicate ? committedById[item.DuplicateOf!].Id : null,
-                DuplicateReason = item.PossibleDuplicate ? item.DuplicateReason : null,
                 Position = position++
             };
+            ApplyAiContent(feature, item, committedById);
             await _productDefinitionRepository.AddFeatureAsync(feature);
             featuresByAiId[item.Id] = feature;
         }
 
-        foreach (var item in output.Features)
+        // Regenerable features the AI left out of this run are dropped.
+        var droppedIds = regenerableById.Values.Select(f => f.Id).ToHashSet();
+        var keptIds = keptById.Values.Select(f => f.Id).ToHashSet();
+
+        var removedDependencies = await RebuildDependenciesAsync(features, featuresByAiId, output, keptIds, droppedIds);
+
+        foreach (var dropped in regenerableById.Values)
         {
-            foreach (var dependency in item.DependsOn.DistinctBy(d => d.FeatureId, StringComparer.OrdinalIgnoreCase))
-            {
-                await _productDefinitionRepository.AddDependencyAsync(new FeatureDependency
-                {
-                    FeatureId = featuresByAiId[item.Id].Id,
-                    DependsOnFeatureId = featuresByAiId[dependency.FeatureId].Id,
-                    Reason = dependency.Reason
-                });
-            }
+            _productDefinitionRepository.RemoveFeature(dropped);
+        }
+
+        return removedDependencies;
+    }
+
+    // A kept feature keeps its content, origin and status. The AI may always re-assess it; it may also set its
+    // role and flags as long as the developer hasn't decided on it yet (e.g. a committed feature added since
+    // the last run).
+    private static void ApplyToKeptFeature(Feature kept, DefineFeatureOutput item, IReadOnlyDictionary<string, Feature> committedById)
+    {
+        kept.AiVerdict = item.AiAssessment.Verdict;
+        kept.AiReason = item.AiAssessment.Reason;
+
+        if (kept.DevDecided)
+        {
+            return;
+        }
+
+        kept.Role = item.Role;
+
+        if (kept.Origin == FeatureOrigin.FromCommittedList)
+        {
+            kept.PersonaConflict = item.PersonaConflict;
+            kept.PersonaConflictReason = item.PersonaConflict ? item.PersonaConflictReason : null;
+        }
+        else
+        {
+            ApplyDuplicateFlag(kept, item, committedById);
         }
     }
+
+    // A regenerated or new feature takes everything from the AI; its status is recomputed from DEFINE step 7.
+    private static void ApplyAiContent(Feature feature, DefineFeatureOutput item, IReadOnlyDictionary<string, Feature> committedById)
+    {
+        var sources = new List<FeatureOrigin> { item.Origin };
+        var origin = FeatureOriginPolicy.Resolve(sources);
+
+        feature.Name = item.Name;
+        feature.Description = item.Description;
+        feature.Scope = item.Scope;
+        feature.Role = item.Role;
+        feature.Sources = sources;
+        feature.Origin = origin;
+        feature.AiVerdict = item.AiAssessment.Verdict;
+        feature.AiReason = item.AiAssessment.Reason;
+        feature.Status = FeatureStatusPolicy.DefaultFor(origin, item.AiAssessment.Verdict);
+        ApplyDuplicateFlag(feature, item, committedById);
+    }
+
+    private static void ApplyDuplicateFlag(Feature feature, DefineFeatureOutput item, IReadOnlyDictionary<string, Feature> committedById)
+    {
+        feature.PossibleDuplicate = item.PossibleDuplicate;
+        feature.DuplicateOfId = item.PossibleDuplicate ? committedById[item.DuplicateOf!].Id : null;
+        feature.DuplicateReason = item.PossibleDuplicate ? item.DuplicateReason : null;
+    }
+
+    // Links between two kept features are the developer's graph and stay exactly as they are. Every other link
+    // was proposed by the AI and is rebuilt from this run's output. Links pointing to a dropped feature are
+    // reported so the developer can see what disappeared.
+    private async Task<List<RemovedDependencyDto>> RebuildDependenciesAsync(
+        List<Feature> existingFeatures,
+        IReadOnlyDictionary<string, Feature> featuresByAiId,
+        DefineAnalysisOutput output,
+        HashSet<Guid> keptIds,
+        HashSet<Guid> droppedIds)
+    {
+        var proposedLinks = new Dictionary<(Guid FeatureId, Guid PrerequisiteId), string>();
+        foreach (var item in output.Features)
+        {
+            var featureId = featuresByAiId[item.Id].Id;
+            foreach (var dependency in item.DependsOn)
+            {
+                var prerequisiteId = featuresByAiId[dependency.FeatureId].Id;
+                if (featureId != prerequisiteId && !(keptIds.Contains(featureId) && keptIds.Contains(prerequisiteId)))
+                {
+                    proposedLinks.TryAdd((featureId, prerequisiteId), dependency.Reason);
+                }
+            }
+        }
+
+        var namesById = existingFeatures.ToDictionary(f => f.Id, f => f.Name);
+        var removedDependencies = new List<RemovedDependencyDto>();
+
+        foreach (var link in existingFeatures.SelectMany(f => f.Dependencies).ToList())
+        {
+            if (keptIds.Contains(link.FeatureId) && keptIds.Contains(link.DependsOnFeatureId))
+            {
+                continue;
+            }
+
+            // Re-proposed links are updated in place rather than deleted and re-inserted.
+            if (proposedLinks.Remove((link.FeatureId, link.DependsOnFeatureId), out var reason))
+            {
+                link.Reason = reason;
+                continue;
+            }
+
+            if (!droppedIds.Contains(link.FeatureId) && droppedIds.Contains(link.DependsOnFeatureId))
+            {
+                removedDependencies.Add(new RemovedDependencyDto(
+                    link.FeatureId, namesById[link.FeatureId], namesById[link.DependsOnFeatureId]));
+            }
+
+            _productDefinitionRepository.RemoveDependency(link);
+        }
+
+        foreach (var ((featureId, prerequisiteId), reason) in proposedLinks)
+        {
+            await _productDefinitionRepository.AddDependencyAsync(new FeatureDependency
+            {
+                FeatureId = featureId,
+                DependsOnFeatureId = prerequisiteId,
+                Reason = reason
+            });
+        }
+
+        return removedDependencies;
+    }
+
+    private static DefineExistingFeatureInput ToExistingFeatureInput(Feature feature) => new()
+    {
+        Id = feature.Id.ToString(),
+        Name = feature.Name,
+        Description = feature.Description,
+        Scope = feature.Scope,
+        Role = feature.Role,
+        Origin = feature.Origin,
+        Status = feature.Status,
+        AiVerdict = feature.AiVerdict,
+        CanRegenerate = FeatureRegenerationPolicy.CanRegenerate(feature),
+        DependsOn = feature.Dependencies
+            .Select(d => new DefineDependencyOutput { FeatureId = d.DependsOnFeatureId.ToString(), Reason = d.Reason ?? string.Empty })
+            .ToList()
+    };
+
+    private static DefinePersona? ToPersonaInput(LockedPersona? persona) => persona is null
+        ? null
+        : new DefinePersona
+        {
+            PrimaryPersona = persona.PrimaryPersona,
+            Reason = persona.Reason,
+            SupportingRoles = persona.SupportingRoles
+                .Select(role => new DefineSupportingRole { Name = role.Name, Reason = role.Reason })
+                .ToList()
+        };
 }

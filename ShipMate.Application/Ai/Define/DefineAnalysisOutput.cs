@@ -5,19 +5,20 @@ namespace ShipMate.Application.Ai.Define;
 /// <summary>What the AI returns for DEFINE, matching define-analysis.schema.json.</summary>
 public class DefineAnalysisOutput
 {
-    public DefinePersonaOutput Persona { get; set; } = new();
+    public DefinePersona Persona { get; set; } = new();
     public DefineProblemSolutionOutput ProblemSolution { get; set; } = new();
     public List<DefineFeatureOutput> Features { get; set; } = new();
 }
 
-public class DefinePersonaOutput
+// Returned by the AI, and sent back to it as current_persona on a re-analysis.
+public class DefinePersona
 {
     public string PrimaryPersona { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
-    public List<DefineSupportingRoleOutput> SupportingRoles { get; set; } = new();
+    public List<DefineSupportingRole> SupportingRoles { get; set; } = new();
 }
 
-public class DefineSupportingRoleOutput
+public class DefineSupportingRole
 {
     public string Name { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;

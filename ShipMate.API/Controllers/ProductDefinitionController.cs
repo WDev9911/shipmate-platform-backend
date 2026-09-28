@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using ShipMate.Application.DTOs.ProductDefinitions;
 using ShipMate.Application.Interfaces.Services;
 
@@ -32,10 +33,13 @@ public class ProductDefinitionController : ControllerBase
     }
 
     [HttpPost("analyze")]
-    public async Task<IActionResult> Analyze(Guid workspaceId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Analyze(
+        Guid workspaceId,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] AnalyzeProductDefinitionRequest? request,
+        CancellationToken cancellationToken)
     {
         var result = await _productDefinitionAnalysisService.AnalyzeAsync(
-            _currentUserService.UserId!.Value, workspaceId, cancellationToken);
+            _currentUserService.UserId!.Value, workspaceId, request, cancellationToken);
         return Ok(result);
     }
 
