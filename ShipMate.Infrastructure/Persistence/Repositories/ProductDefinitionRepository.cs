@@ -34,8 +34,14 @@ public class ProductDefinitionRepository : IProductDefinitionRepository
     public async Task AddDependencyAsync(FeatureDependency dependency) =>
         await _context.FeatureDependencies.AddAsync(dependency);
 
+    public void RemoveDependency(FeatureDependency dependency) =>
+        _context.FeatureDependencies.Remove(dependency);
+
     public async Task AddAnalysisRunAsync(AiAnalysisRun run) =>
         await _context.AiAnalysisRuns.AddAsync(run);
+
+    public async Task AddChangeLogAsync(FeatureChangeLog changeLog) =>
+        await _context.FeatureChangeLogs.AddAsync(changeLog);
 
     public async Task<bool> SaveChangesAsync() =>
         await _context.SaveChangesAsync() > 0;

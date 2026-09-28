@@ -19,6 +19,7 @@ public static class DependencyInjection
         services.AddScoped<IWorkspaceService, WorkspaceService>();
         services.AddScoped<IProductDefinitionService, ProductDefinitionService>();
         services.AddScoped<IProductDefinitionAnalysisService, ProductDefinitionAnalysisService>();
+        services.AddScoped<IFeatureReviewService, FeatureReviewService>();
 
         return services;
     }
