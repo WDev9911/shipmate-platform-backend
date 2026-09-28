@@ -162,7 +162,7 @@ Sau lần LOCK đầu tiên thành công, Product Definition bị **đóng băng
 5. Các thao tác review chỉ dùng được sau lần chạy AI thành công đầu tiên.
 6. Gộp 2 feature: feature được giữ lại **giữ nguyên trạng thái của nó**. Nếu có feature đã chốt tham gia thì ghi `merge` vào `change_history`.
 7. "Loại luôn feature phụ thuộc" lan theo cả chuỗi phụ thuộc gián tiếp. Nếu trong chuỗi có feature đã chốt thì chặn, vì feature đã chốt không được loại trực tiếp.
-8. Xử lý cờ `possible_duplicate` / `persona_conflict` xong thì xóa cờ. `dev_decided = true` là dấu vết Dev đã xử lý.
+8. Xử lý cờ `possible_duplicate` / `persona_conflict` xong thì xóa cờ. `dev_decided = true` là dấu vết Dev đã xử lý. **Loại một feature đang bị gắn cờ cũng được tính là đã xử lý cờ:** cờ không bị xóa nhưng không chặn `READY_FOR_LOCK` khi feature đang `excluded`. Nếu feature được INCLUDE lại thì cờ có hiệu lực trở lại.
 9. Dev thêm liên kết `depends_on` tạo ra vòng lặp thì bị chặn ngay. Vòng lặp do AI tạo ra vẫn được lưu và bị chặn ở bước chuyển `READY_FOR_LOCK`.
 10. Không cho feature `included` phụ thuộc feature `excluded`.
 
