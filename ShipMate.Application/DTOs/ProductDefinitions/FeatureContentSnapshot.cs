@@ -26,4 +26,20 @@ public record FeatureContentSnapshot(
 
     public static string ToJson(IEnumerable<FeatureContentSnapshot> snapshots) =>
         JsonSerializer.Serialize(snapshots, JsonOptions);
+
+    public static FeatureContentSnapshot? Parse(string? json) =>
+        json is null ? null : JsonSerializer.Deserialize<FeatureContentSnapshot>(json, JsonOptions);
+
+    // A merge stores the "before" of both features as an array; every other change stores a single snapshot.
+    public static IReadOnlyList<FeatureContentSnapshot> ParseMany(string? json)
+    {
+        if (json is null)
+        {
+            return [];
+        }
+
+        return json.TrimStart().StartsWith('[')
+            ? JsonSerializer.Deserialize<List<FeatureContentSnapshot>>(json, JsonOptions) ?? []
+            : [JsonSerializer.Deserialize<FeatureContentSnapshot>(json, JsonOptions)!];
+    }
 }

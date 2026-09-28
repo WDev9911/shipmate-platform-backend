@@ -15,5 +15,8 @@ public interface IProductDefinitionRepository
     void RemoveDependency(FeatureDependency dependency);
     Task AddAnalysisRunAsync(AiAnalysisRun run);
     Task AddChangeLogAsync(FeatureChangeLog changeLog);
+
+    /// <summary>A feature's change history, newest first, with the user who made each change loaded.</summary>
+    Task<List<FeatureChangeLog>> GetChangeLogsAsync(Guid featureId);
     Task<bool> SaveChangesAsync();
 }

@@ -13,4 +13,10 @@ public static class FeatureChangePolicy
 
     public static bool RequiresChangeRequestForEdit(FeatureOrigin origin) =>
         origin == FeatureOrigin.FromCommittedList;
+
+    // Step 8: re-including a committed feature that was excluded needs no confirmation but is still audited.
+    public static bool IsAuditedStatusChange(FeatureOrigin origin, FeatureStatus previousStatus, FeatureStatus newStatus) =>
+        origin == FeatureOrigin.FromCommittedList
+        && previousStatus == FeatureStatus.Excluded
+        && newStatus == FeatureStatus.Included;
 }

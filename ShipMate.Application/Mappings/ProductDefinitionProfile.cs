@@ -22,5 +22,10 @@ public class ProductDefinitionProfile : Profile
             .ForMember(dest => dest.DependsOn, opt => opt.MapFrom(src => src.Dependencies));
 
         CreateMap<FeatureDependency, FeatureDependencyDto>();
+
+        CreateMap<FeatureChangeLog, FeatureChangeLogDto>()
+            .ForMember(dest => dest.Before, opt => opt.MapFrom(src => FeatureContentSnapshot.ParseMany(src.OldContent)))
+            .ForMember(dest => dest.After, opt => opt.MapFrom(src => FeatureContentSnapshot.Parse(src.NewContent)))
+            .ForMember(dest => dest.PerformedByName, opt => opt.MapFrom(src => src.PerformedBy.DisplayName));
     }
 }

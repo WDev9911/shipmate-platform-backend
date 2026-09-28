@@ -44,6 +44,20 @@ public class ProductDefinitionService : IProductDefinitionService
         return _mapper.Map<ProductDefinitionDto>(productDefinition);
     }
 
+    public async Task<List<FeatureChangeLogDto>> GetFeatureChangeHistoryAsync(Guid userId, Guid workspaceId, Guid featureId)
+    {
+        await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
+
+        var productDefinition = await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId);
+        if (productDefinition is null || productDefinition.Features.All(f => f.Id != featureId))
+        {
+            throw new NotFoundException("Feature", featureId);
+        }
+
+        var changeLogs = await _productDefinitionRepository.GetChangeLogsAsync(featureId);
+        return _mapper.Map<List<FeatureChangeLogDto>>(changeLogs);
+    }
+
     public async Task<FeatureDto> AddCommittedFeatureAsync(
         Guid userId, Guid workspaceId, CreateCommittedFeatureRequest request)
     {

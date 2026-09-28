@@ -23,4 +23,8 @@ public interface IFeatureReviewService
         Guid userId, Guid workspaceId, Guid featureId, AddFeatureDependencyRequest request);
 
     Task RemoveDependencyAsync(Guid userId, Guid workspaceId, Guid featureId, Guid dependsOnFeatureId);
+
+    /// <summary>Edits or excludes a committed feature after the customer was informed (DEFINE step 8).</summary>
+    Task<ProductDefinitionDto> SubmitChangeRequestAsync(
+        Guid userId, Guid workspaceId, Guid featureId, CommittedFeatureChangeRequest request);
 }

@@ -6,6 +6,8 @@ public interface IProductDefinitionService
 {
     Task<ProductDefinitionDto> GetAsync(Guid userId, Guid workspaceId);
 
+    Task<List<FeatureChangeLogDto>> GetFeatureChangeHistoryAsync(Guid userId, Guid workspaceId, Guid featureId);
+
     Task<FeatureDto> AddCommittedFeatureAsync(Guid userId, Guid workspaceId, CreateCommittedFeatureRequest request);
     Task<FeatureDto> UpdateCommittedFeatureAsync(
         Guid userId, Guid workspaceId, Guid featureId, UpdateCommittedFeatureRequest request);

@@ -43,6 +43,13 @@ public class ProductDefinitionRepository : IProductDefinitionRepository
     public async Task AddChangeLogAsync(FeatureChangeLog changeLog) =>
         await _context.FeatureChangeLogs.AddAsync(changeLog);
 
+    public async Task<List<FeatureChangeLog>> GetChangeLogsAsync(Guid featureId) =>
+        await _context.FeatureChangeLogs
+            .Include(l => l.PerformedBy)
+            .Where(l => l.FeatureId == featureId)
+            .OrderByDescending(l => l.CreatedAt)
+            .ToListAsync();
+
     public async Task<bool> SaveChangesAsync() =>
         await _context.SaveChangesAsync() > 0;
 }

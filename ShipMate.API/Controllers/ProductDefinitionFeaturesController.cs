@@ -11,14 +11,25 @@ namespace ShipMate.API.Controllers;
 public class ProductDefinitionFeaturesController : ControllerBase
 {
     private readonly IFeatureReviewService _featureReviewService;
+    private readonly IProductDefinitionService _productDefinitionService;
     private readonly ICurrentUserService _currentUserService;
 
     public ProductDefinitionFeaturesController(
         IFeatureReviewService featureReviewService,
+        IProductDefinitionService productDefinitionService,
         ICurrentUserService currentUserService)
     {
         _featureReviewService = featureReviewService;
+        _productDefinitionService = productDefinitionService;
         _currentUserService = currentUserService;
+    }
+
+    [HttpGet("{featureId:guid}/change-history")]
+    public async Task<IActionResult> GetChangeHistory(Guid workspaceId, Guid featureId)
+    {
+        var result = await _productDefinitionService.GetFeatureChangeHistoryAsync(
+            _currentUserService.UserId!.Value, workspaceId, featureId);
+        return Ok(result);
     }
 
     [HttpPatch("{featureId:guid}")]
@@ -65,6 +76,15 @@ public class ProductDefinitionFeaturesController : ControllerBase
         await _featureReviewService.RemoveDependencyAsync(
             _currentUserService.UserId!.Value, workspaceId, featureId, dependsOnFeatureId);
         return NoContent();
+    }
+
+    [HttpPost("{featureId:guid}/change-requests")]
+    public async Task<IActionResult> SubmitChangeRequest(
+        Guid workspaceId, Guid featureId, CommittedFeatureChangeRequest request)
+    {
+        var result = await _featureReviewService.SubmitChangeRequestAsync(
+            _currentUserService.UserId!.Value, workspaceId, featureId, request);
+        return Ok(result);
     }
 
     [HttpPost("{featureId:guid}/accept-persona-conflict")]
