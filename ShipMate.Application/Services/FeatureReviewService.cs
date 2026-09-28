@@ -155,6 +155,75 @@ public class FeatureReviewService : IFeatureReviewService
         return _mapper.Map<FeatureDto>(feature);
     }
 
+    public async Task<FeatureDto> AddDependencyAsync(
+        Guid userId, Guid workspaceId, Guid featureId, AddFeatureDependencyRequest request)
+    {
+        var (productDefinition, feature) = await GetReviewableFeatureOrThrow(userId, workspaceId, featureId);
+
+        if (request.DependsOnFeatureId == feature.Id)
+        {
+            throw new FeatureSelfDependencyException();
+        }
+
+        var prerequisite = productDefinition.Features.FirstOrDefault(f => f.Id == request.DependsOnFeatureId)
+            ?? throw new NotFoundException("Feature", request.DependsOnFeatureId);
+
+        if (feature.Dependencies.Any(d => d.DependsOnFeatureId == prerequisite.Id))
+        {
+            throw new DependencyAlreadyExistsException();
+        }
+
+        if (feature.Status == FeatureStatus.Included && prerequisite.Status == FeatureStatus.Excluded)
+        {
+            throw new DependencyOnExcludedFeatureException();
+        }
+
+        var cycle = FeatureDependencyGraph.FindCycleIfLinked(productDefinition.Features, feature.Id, prerequisite.Id);
+        if (cycle.Count > 0)
+        {
+            var namesById = productDefinition.Features.ToDictionary(f => f.Id, f => f.Name);
+            throw new DependencyCreatesCycleException(
+                cycle.Select(id => new FeatureReferenceDto(id, namesById[id])).ToList());
+        }
+
+        await _productDefinitionRepository.AddDependencyAsync(new FeatureDependency
+        {
+            FeatureId = feature.Id,
+            DependsOnFeatureId = prerequisite.Id,
+            Reason = request.Reason
+        });
+
+        // DEFINE step 5b: editing a link counts as a decision on both features it connects.
+        var now = DateTime.UtcNow;
+        MarkDecided(feature, feature.Status, now);
+        MarkDecided(prerequisite, prerequisite.Status, now);
+        productDefinition.UpdatedAt = now;
+        await _productDefinitionRepository.SaveChangesAsync();
+
+        return _mapper.Map<FeatureDto>(feature);
+    }
+
+    public async Task RemoveDependencyAsync(Guid userId, Guid workspaceId, Guid featureId, Guid dependsOnFeatureId)
+    {
+        var (productDefinition, feature) = await GetReviewableFeatureOrThrow(userId, workspaceId, featureId);
+
+        var link = feature.Dependencies.FirstOrDefault(d => d.DependsOnFeatureId == dependsOnFeatureId)
+            ?? throw new NotFoundException("Dependency", dependsOnFeatureId);
+
+        _productDefinitionRepository.RemoveDependency(link);
+
+        var now = DateTime.UtcNow;
+        MarkDecided(feature, feature.Status, now);
+        var prerequisite = productDefinition.Features.FirstOrDefault(f => f.Id == dependsOnFeatureId);
+        if (prerequisite is not null)
+        {
+            MarkDecided(prerequisite, prerequisite.Status, now);
+        }
+
+        productDefinition.UpdatedAt = now;
+        await _productDefinitionRepository.SaveChangesAsync();
+    }
+
     // Re-points every dependency link touching the absorbed feature onto the survivor, skipping links that
     // would duplicate an existing one or make the survivor depend on itself.
     private async Task MoveDependenciesAsync(ProductDefinition productDefinition, Feature absorbed, Feature survivor)
@@ -261,7 +330,7 @@ public class FeatureReviewService : IFeatureReviewService
 
             default:
                 throw new FeatureHasDependentsException(
-                    dependents.Select(d => new DependentFeatureDto(d.Id, d.Name)).ToList());
+                    dependents.Select(d => new FeatureReferenceDto(d.Id, d.Name)).ToList());
         }
 
         MarkDecided(feature, FeatureStatus.Excluded, now);

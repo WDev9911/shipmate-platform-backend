@@ -18,4 +18,9 @@ public interface IFeatureReviewService
 
     /// <summary>Resolves a persona-conflict flag by keeping the feature as a reasonable exception.</summary>
     Task<FeatureDto> AcceptPersonaConflictAsync(Guid userId, Guid workspaceId, Guid featureId);
+
+    Task<FeatureDto> AddDependencyAsync(
+        Guid userId, Guid workspaceId, Guid featureId, AddFeatureDependencyRequest request);
+
+    Task RemoveDependencyAsync(Guid userId, Guid workspaceId, Guid featureId, Guid dependsOnFeatureId);
 }
