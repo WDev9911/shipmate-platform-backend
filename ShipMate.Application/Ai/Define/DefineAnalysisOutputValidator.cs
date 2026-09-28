@@ -9,10 +9,19 @@ namespace ShipMate.Application.Ai.Define;
 /// </summary>
 public static class DefineAnalysisOutputValidator
 {
-    public static IReadOnlyList<string> Validate(DefineAnalysisOutput output, IReadOnlyCollection<string> committedFeatureIds)
+    /// <param name="committedFeatureIds">Committed features: each must be returned, and only they may use from_committed_list.</param>
+    /// <param name="keptFeatureIds">
+    /// Every existing feature the AI may not regenerate (committed ones included). They stay even if the AI
+    /// leaves them out, so they may still be referenced.
+    /// </param>
+    public static IReadOnlyList<string> Validate(
+        DefineAnalysisOutput output,
+        IReadOnlyCollection<string> committedFeatureIds,
+        IReadOnlyCollection<string> keptFeatureIds)
     {
         var errors = new List<string>();
         var committedIds = new HashSet<string>(committedFeatureIds, StringComparer.OrdinalIgnoreCase);
+        var keptIds = new HashSet<string>(keptFeatureIds, StringComparer.OrdinalIgnoreCase);
 
         if (string.IsNullOrWhiteSpace(output.Persona.PrimaryPersona))
         {
@@ -44,11 +53,12 @@ public static class DefineAnalysisOutputValidator
             errors.Add($"Committed feature '{committedId}' is missing from the output.");
         }
 
+        var referenceableIds = new HashSet<string>(featureIds.Concat(keptIds), StringComparer.OrdinalIgnoreCase);
         foreach (var feature in output.Features)
         {
             foreach (var dependency in feature.DependsOn)
             {
-                if (!featureIds.Contains(dependency.FeatureId))
+                if (!referenceableIds.Contains(dependency.FeatureId))
                 {
                     errors.Add($"Feature '{feature.Id}' depends on unknown feature '{dependency.FeatureId}'.");
                 }
@@ -67,7 +77,7 @@ public static class DefineAnalysisOutputValidator
         }
 
         // Spec step 2.2: the AI may only *propose* a supporting feature if some primary feature depends on it.
-        // Committed features are the developer's input, not AI proposals, so the rule doesn't apply to them.
+        // Kept features (committed ones included) are not new proposals, so the rule doesn't apply to them.
         var dependedOnByPrimary = output.Features
             .Where(feature => feature.Role == FeatureRole.Primary)
             .SelectMany(feature => feature.DependsOn)
@@ -76,7 +86,7 @@ public static class DefineAnalysisOutputValidator
 
         foreach (var feature in output.Features.Where(f =>
                      f.Role == FeatureRole.Supporting
-                     && !committedIds.Contains(f.Id)
+                     && !keptIds.Contains(f.Id)
                      && !dependedOnByPrimary.Contains(f.Id)))
         {
             errors.Add($"Supporting feature '{feature.Id}' is not required by any primary feature.");

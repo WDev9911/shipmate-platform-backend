@@ -178,6 +178,15 @@ Sau lần LOCK đầu tiên thành công, Product Definition bị **đóng băng
 15. Điều kiện "không có vòng lặp" kiểm tra trên toàn bộ feature, đúng chữ của spec.
 16. Khuyến nghị mềm "3–5 feature cốt lõi" đếm các feature `primary` chưa bị loại (`included` + `pending_confirmation`).
 
+**Chạy lại AI (M8)**
+
+17. Chạy lại dùng chung API với lần phân tích đầu (`POST .../analyze`), kèm tùy chọn `instruction` (yêu cầu điều chỉnh của Dev) và `reassessPersona` (nút "Cần sửa lại persona").
+18. Feature thuộc nhóm "giữ nguyên" mà AI không trả về thì vẫn được giữ nguyên, không coi là lỗi. Riêng feature đã chốt vẫn bắt buộc AI phải trả về.
+19. Feature giữ nguyên chưa được Dev quyết định gì (ví dụ feature đã chốt mới thêm sau lần chạy trước) được AI điền `role` và cờ. Feature đã `dev_decided` thì AI chỉ được đánh giá lại `ai_assessment`.
+20. Liên kết `depends_on` giữa 2 feature giữ nguyên được giữ y như cũ, bỏ qua đề xuất của AI (tránh thêm lại liên kết Dev đã xóa). Liên kết dính tới feature sinh lại hoặc feature mới thì lấy theo AI.
+21. Cảnh báo "liên kết trỏ tới feature không còn tồn tại" được trả trong response của `analyze` (`removedDependencies`).
+22. Feature được thêm chỉ vì `instruction` có `origin = from_ai`, vì `instruction` là yêu cầu của Dev, không phải lời khách.
+
 ## Điểm còn để ngỏ
 
 - Bước 9 cần người phụ trách LOCK xác nhận.
