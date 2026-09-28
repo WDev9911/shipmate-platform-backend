@@ -27,6 +27,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminActionLogRepository, AdminActionLogRepository>();
         services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
         services.AddScoped<IWorkspaceMemberRepository, WorkspaceMemberRepository>();
+        services.AddScoped<IProductDefinitionRepository, ProductDefinitionRepository>();
 
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
