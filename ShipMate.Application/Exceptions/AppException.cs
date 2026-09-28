@@ -9,6 +9,9 @@ public abstract class AppException : Exception
     public abstract string ErrorCode { get; }
     public abstract int StatusCode { get; }
 
+    // Optional structured data the FE needs to act on the error, returned as "details".
+    public virtual object? Details => null;
+
     protected AppException(string message) : base(message)
     {
     }

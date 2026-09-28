@@ -40,6 +40,11 @@ public class GlobalExceptionHandler : IExceptionHandler
         if (exception is AppException appException)
         {
             problemDetails.Extensions["errorCode"] = appException.ErrorCode;
+
+            if (appException.Details is not null)
+            {
+                problemDetails.Extensions["details"] = appException.Details;
+            }
         }
 
         httpContext.Response.StatusCode = statusCode;
