@@ -27,10 +27,14 @@ public static class ProductDefinitionReadinessPolicy
     {
         var features = productDefinition.Features.OrderBy(f => f.Position).ToList();
 
+        // Excluding a flagged feature is itself a way of handling the flag. The flag is kept, not cleared,
+        // so it blocks again if the feature is ever included back.
+        var activeFeatures = features.Where(f => f.Status != FeatureStatus.Excluded).ToList();
+
         return new ProductDefinitionReadiness(
             features.Where(f => f.Status == FeatureStatus.PendingConfirmation).ToList(),
-            features.Where(f => f.PossibleDuplicate).ToList(),
-            features.Where(f => f.PersonaConflict).ToList(),
+            activeFeatures.Where(f => f.PossibleDuplicate).ToList(),
+            activeFeatures.Where(f => f.PersonaConflict).ToList(),
             FeatureDependencyGraph.FindCycle(features));
     }
 }
