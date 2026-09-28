@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace ShipMate.Infrastructure.Persistence.Conversions;
@@ -11,7 +11,7 @@ public class SnakeCaseEnumConverter<TEnum> : ValueConverter<TEnum, string>
     where TEnum : struct, Enum
 {
     private static readonly Dictionary<TEnum, string> EnumToDb =
-        Enum.GetValues<TEnum>().ToDictionary(value => value, value => ToSnakeCase(value.ToString()));
+        Enum.GetValues<TEnum>().ToDictionary(value => value, value => JsonNamingPolicy.SnakeCaseLower.ConvertName(value.ToString()));
 
     private static readonly Dictionary<string, TEnum> DbToEnum =
         EnumToDb.ToDictionary(pair => pair.Value, pair => pair.Key);
@@ -26,7 +26,4 @@ public class SnakeCaseEnumConverter<TEnum> : ValueConverter<TEnum, string>
     public static string ToDb(TEnum value) => EnumToDb[value];
 
     public static TEnum FromDb(string name) => DbToEnum[name];
-
-    private static string ToSnakeCase(string name) =>
-        Regex.Replace(name, "(?<=[a-z0-9])([A-Z])", "_$1").ToLowerInvariant();
 }

@@ -1,0 +1,82 @@
+{
+  "type": "object",
+  "properties": {
+    "persona": {
+      "type": "object",
+      "properties": {
+        "primary_persona": { "type": "string" },
+        "reason": { "type": "string" },
+        "supporting_roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "reason": { "type": "string" }
+            },
+            "required": ["name", "reason"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["primary_persona", "reason", "supporting_roles"],
+      "additionalProperties": false
+    },
+    "problem_solution": {
+      "type": "object",
+      "properties": {
+        "problem": { "type": "string" },
+        "solution": { "type": "string" }
+      },
+      "required": ["problem", "solution"],
+      "additionalProperties": false
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "scope": { "type": "string" },
+          "role": { "type": "string", "x-enum": "FeatureRole" },
+          "origin": { "type": "string", "x-enum": "FeatureOrigin" },
+          "ai_assessment": {
+            "type": "object",
+            "properties": {
+              "verdict": { "type": "string", "x-enum": "AiVerdict" },
+              "reason": { "type": "string" }
+            },
+            "required": ["verdict", "reason"],
+            "additionalProperties": false
+          },
+          "possible_duplicate": { "type": "boolean" },
+          "duplicate_of": { "type": "string" },
+          "duplicate_reason": { "type": "string" },
+          "persona_conflict": { "type": "boolean" },
+          "persona_conflict_reason": { "type": "string" },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "feature_id": { "type": "string" },
+                "reason": { "type": "string" }
+              },
+              "required": ["feature_id", "reason"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id", "name", "description", "scope", "role", "origin",
+          "ai_assessment", "possible_duplicate", "persona_conflict", "depends_on"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["persona", "problem_solution", "features"],
+  "additionalProperties": false
+}

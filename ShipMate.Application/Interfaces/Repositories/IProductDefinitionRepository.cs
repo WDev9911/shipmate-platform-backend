@@ -11,5 +11,7 @@ public interface IProductDefinitionRepository
     Task AddAsync(ProductDefinition productDefinition);
     Task AddFeatureAsync(Feature feature);
     void RemoveFeature(Feature feature);
+    Task AddDependencyAsync(FeatureDependency dependency);
+    Task AddAnalysisRunAsync(AiAnalysisRun run);
     Task<bool> SaveChangesAsync();
 }

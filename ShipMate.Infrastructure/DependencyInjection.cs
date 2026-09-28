@@ -2,12 +2,14 @@ using System.Net.Http.Headers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Application.Interfaces.Services;
 using ShipMate.Infrastructure.Persistence;
 using ShipMate.Infrastructure.Persistence.Repositories;
 using ShipMate.Infrastructure.Security;
 using ShipMate.Infrastructure.Services;
+using ShipMate.Infrastructure.Services.Ai;
 using ShipMate.Infrastructure.Services.GitHub;
 
 namespace ShipMate.Infrastructure;
@@ -48,6 +50,14 @@ public static class DependencyInjection
         });
 
         services.AddHttpClient<IGitHubOAuthService, GitHubOAuthService>();
+
+        services.Configure<GeminiOptions>(configuration.GetSection(GeminiOptions.SectionName));
+        services.AddHttpClient<IAiGateway, GeminiAiGateway>((serviceProvider, client) =>
+        {
+            var geminiOptions = serviceProvider.GetRequiredService<IOptions<GeminiOptions>>().Value;
+            client.BaseAddress = new Uri(geminiOptions.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(geminiOptions.TimeoutSeconds);
+        });
 
         return services;
     }

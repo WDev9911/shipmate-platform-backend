@@ -20,4 +20,6 @@ public class ProductDefinition : BaseEntity
 
     public ICollection<Feature> Features { get; set; } = new List<Feature>();
     public ICollection<AiAnalysisRun> AnalysisRuns { get; set; } = new List<AiAnalysisRun>();
+
+    public int NextFeaturePosition() => Features.Count == 0 ? 0 : Features.Max(f => f.Position) + 1;
 }
