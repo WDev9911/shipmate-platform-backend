@@ -35,6 +35,9 @@ public class FeatureReviewService : IFeatureReviewService
             throw new CommittedFeatureChangeRequiredException();
         }
 
+        var previousStatus = feature.Status;
+        var before = FeatureContentSnapshot.Of(feature);
+
         var now = DateTime.UtcNow;
         if (request.Status == FeatureStatus.Excluded)
         {
@@ -43,6 +46,18 @@ public class FeatureReviewService : IFeatureReviewService
         else
         {
             MarkDecided(feature, request.Status, now);
+        }
+
+        if (FeatureChangePolicy.IsAuditedStatusChange(feature.Origin, previousStatus, feature.Status))
+        {
+            await _productDefinitionRepository.AddChangeLogAsync(new FeatureChangeLog
+            {
+                FeatureId = feature.Id,
+                Action = FeatureChangeAction.Include,
+                OldContent = before.ToJson(),
+                NewContent = FeatureContentSnapshot.Of(feature).ToJson(),
+                PerformedByUserId = userId
+            });
         }
 
         productDefinition.UpdatedAt = now;
@@ -222,6 +237,66 @@ public class FeatureReviewService : IFeatureReviewService
 
         productDefinition.UpdatedAt = now;
         await _productDefinitionRepository.SaveChangesAsync();
+    }
+
+    public async Task<ProductDefinitionDto> SubmitChangeRequestAsync(
+        Guid userId, Guid workspaceId, Guid featureId, CommittedFeatureChangeRequest request)
+    {
+        var (productDefinition, feature) = await GetReviewableFeatureOrThrow(userId, workspaceId, featureId);
+
+        // Change requests exist only for the features whose direct edits are blocked.
+        if (!FeatureChangePolicy.RequiresChangeRequestForEdit(feature.Origin))
+        {
+            throw new FeatureNotCommittedException();
+        }
+
+        var before = FeatureContentSnapshot.Of(feature);
+        var now = DateTime.UtcNow;
+
+        if (request.Action == FeatureChangeAction.Exclude)
+        {
+            if (feature.Status == FeatureStatus.Excluded)
+            {
+                throw new FeatureAlreadyExcludedException();
+            }
+
+            Exclude(productDefinition, feature, request.DependentsResolution, now);
+        }
+        else
+        {
+            if (request.Name is not null)
+            {
+                feature.Name = request.Name;
+            }
+
+            if (request.Description is not null)
+            {
+                feature.Description = request.Description;
+            }
+
+            if (request.Scope is not null)
+            {
+                feature.Scope = request.Scope;
+            }
+
+            MarkDecided(feature, feature.Status, now);
+        }
+
+        await _productDefinitionRepository.AddChangeLogAsync(new FeatureChangeLog
+        {
+            FeatureId = feature.Id,
+            Action = request.Action,
+            OldContent = before.ToJson(),
+            NewContent = FeatureContentSnapshot.Of(feature).ToJson(),
+            Reason = request.Reason,
+            CustomerNotifiedConfirmed = request.CustomerNotifiedConfirmed,
+            PerformedByUserId = userId
+        });
+
+        productDefinition.UpdatedAt = now;
+        await _productDefinitionRepository.SaveChangesAsync();
+
+        return _mapper.Map<ProductDefinitionDto>(productDefinition);
     }
 
     // Re-points every dependency link touching the absorbed feature onto the survivor, skipping links that
