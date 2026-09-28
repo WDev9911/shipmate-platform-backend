@@ -13,6 +13,7 @@ public class WorkspaceService : IWorkspaceService
 {
     private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IWorkspaceMemberRepository _workspaceMemberRepository;
+    private readonly IWorkspaceAccessGuard _workspaceAccessGuard;
     private readonly IUserRepository _userRepository;
     private readonly IGitHubConnectionRepository _gitHubConnectionRepository;
     private readonly IGitHubOAuthService _gitHubOAuthService;
@@ -23,6 +24,7 @@ public class WorkspaceService : IWorkspaceService
     public WorkspaceService(
         IWorkspaceRepository workspaceRepository,
         IWorkspaceMemberRepository workspaceMemberRepository,
+        IWorkspaceAccessGuard workspaceAccessGuard,
         IUserRepository userRepository,
         IGitHubConnectionRepository gitHubConnectionRepository,
         IGitHubOAuthService gitHubOAuthService,
@@ -32,6 +34,7 @@ public class WorkspaceService : IWorkspaceService
     {
         _workspaceRepository = workspaceRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
+        _workspaceAccessGuard = workspaceAccessGuard;
         _userRepository = userRepository;
         _gitHubConnectionRepository = gitHubConnectionRepository;
         _gitHubOAuthService = gitHubOAuthService;
@@ -75,14 +78,13 @@ public class WorkspaceService : IWorkspaceService
 
     public async Task<WorkspaceDto> GetByIdAsync(Guid userId, Guid workspaceId)
     {
-        var (workspace, _) = await GetWorkspaceWithMembershipOrThrow(userId, workspaceId);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
         return _mapper.Map<WorkspaceDto>(workspace);
     }
 
     public async Task<WorkspaceDto> UpdateAsync(Guid userId, Guid workspaceId, UpdateWorkspaceRequest request)
     {
-        var (workspace, membership) = await GetWorkspaceWithMembershipOrThrow(userId, workspaceId);
-        EnsureManager(membership);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         if (request.Name is not null)
         {
@@ -109,8 +111,7 @@ public class WorkspaceService : IWorkspaceService
 
     public async Task ArchiveAsync(Guid userId, Guid workspaceId)
     {
-        var (workspace, membership) = await GetWorkspaceWithMembershipOrThrow(userId, workspaceId);
-        EnsureManager(membership);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         workspace.Status = WorkspaceStatus.Archived;
         workspace.UpdatedAt = DateTime.UtcNow;
@@ -121,7 +122,7 @@ public class WorkspaceService : IWorkspaceService
 
     public async Task<List<WorkspaceMemberDto>> GetMembersAsync(Guid userId, Guid workspaceId)
     {
-        await GetWorkspaceWithMembershipOrThrow(userId, workspaceId);
+        await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
 
         var members = await _workspaceMemberRepository.GetByWorkspaceIdAsync(workspaceId);
         return _mapper.Map<List<WorkspaceMemberDto>>(members);
@@ -129,8 +130,7 @@ public class WorkspaceService : IWorkspaceService
 
     public async Task<WorkspaceMemberDto> AddMemberAsync(Guid userId, Guid workspaceId, AddMemberRequest request)
     {
-        var (workspace, membership) = await GetWorkspaceWithMembershipOrThrow(userId, workspaceId);
-        EnsureManager(membership);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         var targetUser = await _userRepository.GetByEmailAsync(request.Email)
             ?? throw new NotFoundException($"No user found with email '{request.Email}'.");
@@ -182,8 +182,7 @@ public class WorkspaceService : IWorkspaceService
     public async Task<WorkspaceMemberDto> UpdateMemberRoleAsync(
         Guid userId, Guid workspaceId, Guid memberUserId, UpdateMemberRoleRequest request)
     {
-        var (_, membership) = await GetWorkspaceWithMembershipOrThrow(userId, workspaceId);
-        EnsureManager(membership);
+        await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         var targetMembership = await GetActiveMembershipOrThrow(workspaceId, memberUserId);
 
@@ -216,8 +215,7 @@ public class WorkspaceService : IWorkspaceService
 
     public async Task RemoveMemberAsync(Guid userId, Guid workspaceId, Guid memberUserId)
     {
-        var (_, membership) = await GetWorkspaceWithMembershipOrThrow(userId, workspaceId);
-        EnsureManager(membership);
+        await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         var targetMembership = await GetActiveMembershipOrThrow(workspaceId, memberUserId);
 
@@ -277,8 +275,7 @@ public class WorkspaceService : IWorkspaceService
 
     public async Task<List<GitHubRepoDto>> GetAvailableGitHubReposAsync(Guid userId, Guid workspaceId)
     {
-        var (_, membership) = await GetWorkspaceWithMembershipOrThrow(userId, workspaceId);
-        EnsureManager(membership);
+        await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         var accessToken = await GetValidGitHubAccessTokenOrThrow(userId);
 
@@ -287,8 +284,7 @@ public class WorkspaceService : IWorkspaceService
 
     public async Task<WorkspaceDto> LinkGitHubRepoAsync(Guid userId, Guid workspaceId, LinkGitHubRepoRequest request)
     {
-        var (workspace, membership) = await GetWorkspaceWithMembershipOrThrow(userId, workspaceId);
-        EnsureManager(membership);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         var accessToken = await GetValidGitHubAccessTokenOrThrow(userId);
 
@@ -322,8 +318,7 @@ public class WorkspaceService : IWorkspaceService
 
     public async Task UnlinkGitHubRepoAsync(Guid userId, Guid workspaceId)
     {
-        var (workspace, membership) = await GetWorkspaceWithMembershipOrThrow(userId, workspaceId);
-        EnsureManager(membership);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         workspace.GitHubRepoOwner = null;
         workspace.GitHubRepoName = null;
@@ -349,14 +344,6 @@ public class WorkspaceService : IWorkspaceService
         return _encryptionService.Decrypt(connection.GitHubAccessTokenEncrypted);
     }
 
-    private static void EnsureManager(WorkspaceMember membership)
-    {
-        if (membership.Role != WorkspaceMemberRole.Manager)
-        {
-            throw new WorkspacePermissionDeniedException();
-        }
-    }
-
     private async Task<WorkspaceMember> GetActiveMembershipOrThrow(Guid workspaceId, Guid memberUserId)
     {
         var membership = await _workspaceMemberRepository.GetByWorkspaceAndUserIdAsync(workspaceId, memberUserId);
@@ -366,22 +353,5 @@ public class WorkspaceService : IWorkspaceService
         }
 
         return membership;
-    }
-
-    // Access to a workspace (view or manage) requires active membership — not just being the
-    // original owner. "Not found" covers both "doesn't exist" and "you're not a member",
-    // so a user can't probe for workspaces they're not part of.
-    private async Task<(Workspace Workspace, WorkspaceMember Membership)> GetWorkspaceWithMembershipOrThrow(
-        Guid userId, Guid workspaceId)
-    {
-        var workspace = await _workspaceRepository.GetByIdAsync(workspaceId);
-        var membership = await _workspaceMemberRepository.GetByWorkspaceAndUserIdAsync(workspaceId, userId);
-
-        if (workspace is null || membership is null || membership.Status != WorkspaceMemberStatus.Active)
-        {
-            throw new NotFoundException("Workspace", workspaceId);
-        }
-
-        return (workspace, membership);
     }
 }
