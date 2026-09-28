@@ -17,6 +17,11 @@ public class AppDbContext : DbContext
     public DbSet<AdminActionLog> AdminActionLogs => Set<AdminActionLog>();
     public DbSet<Workspace> Workspaces => Set<Workspace>();
     public DbSet<WorkspaceMember> WorkspaceMembers => Set<WorkspaceMember>();
+    public DbSet<ProductDefinition> ProductDefinitions => Set<ProductDefinition>();
+    public DbSet<Feature> Features => Set<Feature>();
+    public DbSet<FeatureDependency> FeatureDependencies => Set<FeatureDependency>();
+    public DbSet<FeatureChangeLog> FeatureChangeLogs => Set<FeatureChangeLog>();
+    public DbSet<AiAnalysisRun> AiAnalysisRuns => Set<AiAnalysisRun>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
