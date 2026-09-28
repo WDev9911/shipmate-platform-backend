@@ -12,6 +12,11 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- AI prompts and JSON schemas ship inside the assembly, looked up by file name. -->
+    <EmbeddedResource Include="Ai\**\*.md;Ai\**\*.json" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -72,7 +72,7 @@ public class ProductDefinitionService : IProductDefinitionService
             Origin = origin,
             // Role and AI assessment stay empty until the AI analyzes this feature.
             Status = FeatureStatusPolicy.DefaultFor(origin, verdict: null),
-            Position = NextPosition(productDefinition)
+            Position = productDefinition.NextFeaturePosition()
         };
         await _productDefinitionRepository.AddFeatureAsync(feature);
 
@@ -136,7 +136,4 @@ public class ProductDefinitionService : IProductDefinitionService
 
         return (productDefinition, feature);
     }
-
-    private static int NextPosition(ProductDefinition productDefinition) =>
-        productDefinition.Features.Count == 0 ? 0 : productDefinition.Features.Max(f => f.Position) + 1;
 }
