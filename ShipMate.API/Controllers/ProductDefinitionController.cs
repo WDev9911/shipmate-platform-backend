@@ -39,6 +39,20 @@ public class ProductDefinitionController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("report")]
+    public async Task<IActionResult> GetReport(Guid workspaceId)
+    {
+        var result = await _productDefinitionService.GetReportAsync(_currentUserService.UserId!.Value, workspaceId);
+        return Ok(result);
+    }
+
+    [HttpPost("ready")]
+    public async Task<IActionResult> MarkReadyForLock(Guid workspaceId)
+    {
+        var result = await _productDefinitionService.MarkReadyForLockAsync(_currentUserService.UserId!.Value, workspaceId);
+        return Ok(result);
+    }
+
     [HttpPost("committed-features")]
     public async Task<IActionResult> AddCommittedFeature(Guid workspaceId, CreateCommittedFeatureRequest request)
     {

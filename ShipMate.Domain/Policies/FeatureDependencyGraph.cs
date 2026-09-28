@@ -4,23 +4,69 @@ namespace ShipMate.Domain.Policies;
 
 /// <summary>
 /// The depends_on graph of a product definition. DEFINE step 7 requires it to be acyclic before READY_FOR_LOCK.
+/// Cycles are returned as feature ids in dependency order, starting and ending with the same feature.
 /// </summary>
 public static class FeatureDependencyGraph
 {
-    /// <summary>
-    /// The cycle that adding "feature depends on prerequisite" would close, as feature ids in dependency order
-    /// starting and ending with <paramref name="featureId"/>; empty when the new link is safe.
-    /// </summary>
+    /// <summary>The cycle that adding "feature depends on prerequisite" would close; empty when the new link is safe.</summary>
     public static IReadOnlyList<Guid> FindCycleIfLinked(IEnumerable<Feature> features, Guid featureId, Guid prerequisiteId)
     {
-        var prerequisitesById = features.ToDictionary(
-            f => f.Id,
-            f => f.Dependencies.Select(d => d.DependsOnFeatureId).ToList());
-
         // The new link closes a cycle exactly when the feature is already reachable from the prerequisite.
-        var path = FindPath(prerequisitesById, prerequisiteId, featureId);
+        var path = FindPath(BuildPrerequisites(features), prerequisiteId, featureId);
         return path.Count == 0 ? [] : [featureId, .. path];
     }
+
+    /// <summary>One cycle in the whole graph, or empty when there is none.</summary>
+    public static IReadOnlyList<Guid> FindCycle(IEnumerable<Feature> features)
+    {
+        var prerequisitesById = BuildPrerequisites(features);
+        var finished = new HashSet<Guid>();
+        var onPath = new List<Guid>();
+
+        foreach (var featureId in prerequisitesById.Keys)
+        {
+            var cycle = Visit(featureId);
+            if (cycle.Count > 0)
+            {
+                return cycle;
+            }
+        }
+
+        return [];
+
+        List<Guid> Visit(Guid featureId)
+        {
+            if (finished.Contains(featureId))
+            {
+                return [];
+            }
+
+            var indexOnPath = onPath.IndexOf(featureId);
+            if (indexOnPath >= 0)
+            {
+                return [.. onPath.Skip(indexOnPath), featureId];
+            }
+
+            onPath.Add(featureId);
+            foreach (var prerequisiteId in prerequisitesById.GetValueOrDefault(featureId, []))
+            {
+                var cycle = Visit(prerequisiteId);
+                if (cycle.Count > 0)
+                {
+                    return cycle;
+                }
+            }
+
+            onPath.RemoveAt(onPath.Count - 1);
+            finished.Add(featureId);
+            return [];
+        }
+    }
+
+    private static Dictionary<Guid, List<Guid>> BuildPrerequisites(IEnumerable<Feature> features) =>
+        features.ToDictionary(
+            f => f.Id,
+            f => f.Dependencies.Select(d => d.DependsOnFeatureId).ToList());
 
     private static List<Guid> FindPath(IReadOnlyDictionary<Guid, List<Guid>> prerequisitesById, Guid from, Guid to)
     {

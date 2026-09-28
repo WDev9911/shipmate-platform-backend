@@ -97,7 +97,7 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
         await ApplyOutputAsync(productDefinition, committedFeatures, output);
 
         run.Succeeded = true;
-        productDefinition.UpdatedAt = DateTime.UtcNow;
+        productDefinition.MarkModified(DateTime.UtcNow);
         await _productDefinitionRepository.SaveChangesAsync();
 
         return _mapper.Map<ProductDefinitionDto>(productDefinition);

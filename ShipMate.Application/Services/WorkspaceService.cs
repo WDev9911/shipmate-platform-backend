@@ -14,6 +14,7 @@ public class WorkspaceService : IWorkspaceService
     private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IWorkspaceMemberRepository _workspaceMemberRepository;
     private readonly IWorkspaceAccessGuard _workspaceAccessGuard;
+    private readonly IProductDefinitionRepository _productDefinitionRepository;
     private readonly IUserRepository _userRepository;
     private readonly IGitHubConnectionRepository _gitHubConnectionRepository;
     private readonly IGitHubOAuthService _gitHubOAuthService;
@@ -25,6 +26,7 @@ public class WorkspaceService : IWorkspaceService
         IWorkspaceRepository workspaceRepository,
         IWorkspaceMemberRepository workspaceMemberRepository,
         IWorkspaceAccessGuard workspaceAccessGuard,
+        IProductDefinitionRepository productDefinitionRepository,
         IUserRepository userRepository,
         IGitHubConnectionRepository gitHubConnectionRepository,
         IGitHubOAuthService gitHubOAuthService,
@@ -35,6 +37,7 @@ public class WorkspaceService : IWorkspaceService
         _workspaceRepository = workspaceRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
         _workspaceAccessGuard = workspaceAccessGuard;
+        _productDefinitionRepository = productDefinitionRepository;
         _userRepository = userRepository;
         _gitHubConnectionRepository = gitHubConnectionRepository;
         _gitHubOAuthService = gitHubOAuthService;
@@ -91,9 +94,15 @@ public class WorkspaceService : IWorkspaceService
             workspace.Name = request.Name;
         }
 
-        if (request.VisionPrompt is not null)
+        var now = DateTime.UtcNow;
+
+        if (request.VisionPrompt is not null && request.VisionPrompt != workspace.VisionPrompt)
         {
             workspace.VisionPrompt = request.VisionPrompt;
+
+            // The vision prompt is DEFINE's input, so changing it also changes the product definition.
+            var productDefinition = await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId);
+            productDefinition?.MarkModified(now);
         }
 
         if (request.LaunchDeadline is not null)
@@ -101,7 +110,7 @@ public class WorkspaceService : IWorkspaceService
             workspace.LaunchDeadline = request.LaunchDeadline;
         }
 
-        workspace.UpdatedAt = DateTime.UtcNow;
+        workspace.UpdatedAt = now;
         _workspaceRepository.Update(workspace);
 
         await _workspaceRepository.SaveChangesAsync();

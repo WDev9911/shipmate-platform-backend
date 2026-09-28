@@ -58,6 +58,67 @@ public class ProductDefinitionService : IProductDefinitionService
         return _mapper.Map<List<FeatureChangeLogDto>>(changeLogs);
     }
 
+    public async Task<ProductDefinitionDto> MarkReadyForLockAsync(Guid userId, Guid workspaceId)
+    {
+        await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
+
+        var productDefinition = await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId);
+        if (productDefinition is null
+            || !await _productDefinitionRepository.HasSuccessfulAnalysisRunAsync(productDefinition.Id))
+        {
+            throw new ProductDefinitionNotAnalyzedException();
+        }
+
+        var readiness = ProductDefinitionReadinessPolicy.Evaluate(productDefinition);
+        if (!readiness.IsReady)
+        {
+            throw new ProductDefinitionNotReadyException(
+                ProductDefinitionReadinessDto.From(readiness, productDefinition.Features));
+        }
+
+        if (productDefinition.Status != ProductDefinitionStatus.ReadyForLock)
+        {
+            productDefinition.MarkReadyForLock(DateTime.UtcNow);
+            await _productDefinitionRepository.SaveChangesAsync();
+        }
+
+        return _mapper.Map<ProductDefinitionDto>(productDefinition);
+    }
+
+    public async Task<ProductDefinitionReportDto> GetReportAsync(Guid userId, Guid workspaceId)
+    {
+        await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
+
+        var productDefinition = await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId);
+        if (productDefinition is null
+            || !await _productDefinitionRepository.HasSuccessfulAnalysisRunAsync(productDefinition.Id))
+        {
+            throw new ProductDefinitionNotAnalyzedException();
+        }
+
+        var features = productDefinition.Features.OrderBy(f => f.Position).ToList();
+        var coreFeatureCount = CoreFeatureRecommendationPolicy.CountCoreFeatures(features);
+
+        return new ProductDefinitionReportDto
+        {
+            Status = productDefinition.Status,
+            Persona = _mapper.Map<LockedPersonaDto?>(productDefinition.LockedPersona),
+            Problem = productDefinition.Problem,
+            Solution = productDefinition.Solution,
+            KillList = _mapper.Map<List<KillListItemDto>>(features.Where(KillListPolicy.IsInKillList)),
+            CoreFeatures = new CoreFeatureSummaryDto
+            {
+                PrimaryCount = coreFeatureCount,
+                SupportingCount = CoreFeatureRecommendationPolicy.CountSupportingFeatures(features),
+                RecommendedMin = CoreFeatureRecommendationPolicy.RecommendedMin,
+                RecommendedMax = CoreFeatureRecommendationPolicy.RecommendedMax,
+                ExceedsRecommendation = CoreFeatureRecommendationPolicy.ExceedsRecommendation(coreFeatureCount)
+            },
+            Warnings = ProductDefinitionReadinessDto.From(
+                ProductDefinitionReadinessPolicy.Evaluate(productDefinition), features)
+        };
+    }
+
     public async Task<FeatureDto> AddCommittedFeatureAsync(
         Guid userId, Guid workspaceId, CreateCommittedFeatureRequest request)
     {
@@ -90,7 +151,7 @@ public class ProductDefinitionService : IProductDefinitionService
         };
         await _productDefinitionRepository.AddFeatureAsync(feature);
 
-        productDefinition.UpdatedAt = DateTime.UtcNow;
+        productDefinition.MarkModified(DateTime.UtcNow);
         await _productDefinitionRepository.SaveChangesAsync();
 
         return _mapper.Map<FeatureDto>(feature);
@@ -113,7 +174,7 @@ public class ProductDefinitionService : IProductDefinitionService
 
         var now = DateTime.UtcNow;
         feature.UpdatedAt = now;
-        productDefinition.UpdatedAt = now;
+        productDefinition.MarkModified(now);
         await _productDefinitionRepository.SaveChangesAsync();
 
         return _mapper.Map<FeatureDto>(feature);
@@ -125,7 +186,7 @@ public class ProductDefinitionService : IProductDefinitionService
 
         _productDefinitionRepository.RemoveFeature(feature);
 
-        productDefinition.UpdatedAt = DateTime.UtcNow;
+        productDefinition.MarkModified(DateTime.UtcNow);
         await _productDefinitionRepository.SaveChangesAsync();
     }
 

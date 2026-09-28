@@ -23,6 +23,8 @@ public class ProductDefinitionProfile : Profile
 
         CreateMap<FeatureDependency, FeatureDependencyDto>();
 
+        CreateMap<Feature, KillListItemDto>();
+
         CreateMap<FeatureChangeLog, FeatureChangeLogDto>()
             .ForMember(dest => dest.Before, opt => opt.MapFrom(src => FeatureContentSnapshot.ParseMany(src.OldContent)))
             .ForMember(dest => dest.After, opt => opt.MapFrom(src => FeatureContentSnapshot.Parse(src.NewContent)))
