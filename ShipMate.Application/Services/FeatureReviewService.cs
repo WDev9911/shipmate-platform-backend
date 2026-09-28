@@ -60,7 +60,7 @@ public class FeatureReviewService : IFeatureReviewService
             });
         }
 
-        productDefinition.UpdatedAt = now;
+        productDefinition.MarkModified(now);
         await _productDefinitionRepository.SaveChangesAsync();
 
         return _mapper.Map<ProductDefinitionDto>(productDefinition);
@@ -92,7 +92,7 @@ public class FeatureReviewService : IFeatureReviewService
 
         var now = DateTime.UtcNow;
         MarkDecided(feature, feature.Status, now);
-        productDefinition.UpdatedAt = now;
+        productDefinition.MarkModified(now);
         await _productDefinitionRepository.SaveChangesAsync();
 
         return _mapper.Map<FeatureDto>(feature);
@@ -128,7 +128,7 @@ public class FeatureReviewService : IFeatureReviewService
             });
         }
 
-        productDefinition.UpdatedAt = now;
+        productDefinition.MarkModified(now);
         await _productDefinitionRepository.SaveChangesAsync();
 
         return _mapper.Map<ProductDefinitionDto>(productDefinition);
@@ -144,7 +144,7 @@ public class FeatureReviewService : IFeatureReviewService
         MarkDecided(flagged, flagged.Status, now);
         MarkDecided(duplicateOf, duplicateOf.Status, now);
 
-        productDefinition.UpdatedAt = now;
+        productDefinition.MarkModified(now);
         await _productDefinitionRepository.SaveChangesAsync();
 
         return _mapper.Map<ProductDefinitionDto>(productDefinition);
@@ -164,7 +164,7 @@ public class FeatureReviewService : IFeatureReviewService
 
         var now = DateTime.UtcNow;
         MarkDecided(feature, feature.Status, now);
-        productDefinition.UpdatedAt = now;
+        productDefinition.MarkModified(now);
         await _productDefinitionRepository.SaveChangesAsync();
 
         return _mapper.Map<FeatureDto>(feature);
@@ -212,7 +212,7 @@ public class FeatureReviewService : IFeatureReviewService
         var now = DateTime.UtcNow;
         MarkDecided(feature, feature.Status, now);
         MarkDecided(prerequisite, prerequisite.Status, now);
-        productDefinition.UpdatedAt = now;
+        productDefinition.MarkModified(now);
         await _productDefinitionRepository.SaveChangesAsync();
 
         return _mapper.Map<FeatureDto>(feature);
@@ -235,7 +235,7 @@ public class FeatureReviewService : IFeatureReviewService
             MarkDecided(prerequisite, prerequisite.Status, now);
         }
 
-        productDefinition.UpdatedAt = now;
+        productDefinition.MarkModified(now);
         await _productDefinitionRepository.SaveChangesAsync();
     }
 
@@ -293,7 +293,7 @@ public class FeatureReviewService : IFeatureReviewService
             PerformedByUserId = userId
         });
 
-        productDefinition.UpdatedAt = now;
+        productDefinition.MarkModified(now);
         await _productDefinitionRepository.SaveChangesAsync();
 
         return _mapper.Map<ProductDefinitionDto>(productDefinition);

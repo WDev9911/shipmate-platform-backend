@@ -149,7 +149,35 @@ Sau lần LOCK đầu tiên thành công, Product Definition bị **đóng băng
     - `depends_on` đổi thành dạng `[{ feature_id, reason }]` — để lưu lý do phụ thuộc (bắt buộc với phụ thuộc `primary` → `supporting`).
 2. **Feature đã chốt nhập sai trước lần chạy AI đầu tiên được sửa/xóa tự do.** Lúc đó nó vẫn đang là input, chưa đi vào Product Definition. Từ sau lần chạy AI đầu tiên mới áp dụng Bước 8.
 
+## Quyết định khi triển khai (M3–M7)
+
+**Phân tích AI (M3)**
+1. AI không trả `status` và `sources`. Hệ thống tự tính `sources = [origin]` và `status` theo Bảng Bước 7, để AI không thể gán sai trạng thái.
+2. Với feature đã chốt, AI chỉ được điền `role`, `ai_assessment` và cờ `persona_conflict`. Tên, mô tả, trạng thái giữ nguyên như Dev nhập.
+3. Luật "feature `supporting` phải có feature `primary` phụ thuộc vào" chỉ áp dụng cho feature do AI đề xuất, không áp dụng cho feature đã chốt.
+4. Output AI vi phạm luật (id trùng, tham chiếu sai, thiếu feature đã chốt...) thì hủy cả lần chạy, không lưu dữ liệu dở dang. Mọi lần gọi AI, kể cả thất bại, đều ghi lại để truy vết.
+
+**Dev review (M4–M5)**
+
+5. Các thao tác review chỉ dùng được sau lần chạy AI thành công đầu tiên.
+6. Gộp 2 feature: feature được giữ lại **giữ nguyên trạng thái của nó**. Nếu có feature đã chốt tham gia thì ghi `merge` vào `change_history`.
+7. "Loại luôn feature phụ thuộc" lan theo cả chuỗi phụ thuộc gián tiếp. Nếu trong chuỗi có feature đã chốt thì chặn, vì feature đã chốt không được loại trực tiếp.
+8. Xử lý cờ `possible_duplicate` / `persona_conflict` xong thì xóa cờ. `dev_decided = true` là dấu vết Dev đã xử lý.
+9. Dev thêm liên kết `depends_on` tạo ra vòng lặp thì bị chặn ngay. Vòng lặp do AI tạo ra vẫn được lưu và bị chặn ở bước chuyển `READY_FOR_LOCK`.
+10. Không cho feature `included` phụ thuộc feature `excluded`.
+
+**Yêu cầu thay đổi feature đã chốt (M6)**
+
+11. Yêu cầu thay đổi được thực hiện ngay sau khi có lý do và xác nhận đã báo khách, không có luồng duyệt.
+12. Chỉ ghi `include` vào `change_history` khi INCLUDE **lại** một feature đã chốt từng bị loại (đúng chữ của spec). INCLUDE lần đầu từ `pending_confirmation` không ghi.
+
+**READY_FOR_LOCK (M7)**
+
+13. Product Definition đang `READY_FOR_LOCK` mà có **bất kỳ thay đổi nào** (kể cả sửa `VisionPrompt` của workspace) thì quay về `Draft`. Dev phải chuyển READY lại. Lý do: READY là lời khẳng định của Dev rằng đúng nội dung này đã xong, nội dung đổi thì lời khẳng định không còn đúng.
+14. Chưa chạy AI lần nào thì không được chuyển `READY_FOR_LOCK`.
+15. Điều kiện "không có vòng lặp" kiểm tra trên toàn bộ feature, đúng chữ của spec.
+16. Khuyến nghị mềm "3–5 feature cốt lõi" đếm các feature `primary` chưa bị loại (`included` + `pending_confirmation`).
+
 ## Điểm còn để ngỏ
 
 - Bước 9 cần người phụ trách LOCK xác nhận.
-- Spec chưa nói Product Definition đang ở `READY_FOR_LOCK` mà Dev sửa tiếp thì xử lý thế nào. Gợi ý: kiểm tra lại 3 điều kiện, nếu không còn thỏa thì quay về trạng thái nháp. Phần này cần nhóm chốt.
