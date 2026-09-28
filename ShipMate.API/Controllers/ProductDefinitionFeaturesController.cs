@@ -51,6 +51,22 @@ public class ProductDefinitionFeaturesController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPost("{featureId:guid}/dependencies")]
+    public async Task<IActionResult> AddDependency(Guid workspaceId, Guid featureId, AddFeatureDependencyRequest request)
+    {
+        var result = await _featureReviewService.AddDependencyAsync(
+            _currentUserService.UserId!.Value, workspaceId, featureId, request);
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    [HttpDelete("{featureId:guid}/dependencies/{dependsOnFeatureId:guid}")]
+    public async Task<IActionResult> RemoveDependency(Guid workspaceId, Guid featureId, Guid dependsOnFeatureId)
+    {
+        await _featureReviewService.RemoveDependencyAsync(
+            _currentUserService.UserId!.Value, workspaceId, featureId, dependsOnFeatureId);
+        return NoContent();
+    }
+
     [HttpPost("{featureId:guid}/accept-persona-conflict")]
     public async Task<IActionResult> AcceptPersonaConflict(Guid workspaceId, Guid featureId)
     {
