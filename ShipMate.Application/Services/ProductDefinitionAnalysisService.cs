@@ -240,15 +240,18 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
         return removedDependencies;
     }
 
-    // A kept feature keeps its content, origin and status. The AI may always re-assess it; it may also set its
-    // role and flags as long as the developer hasn't decided on it yet (e.g. a committed feature added since
-    // the last run).
+    // A kept feature keeps its content, origin and status. The AI may always re-assess it. It may also set the
+    // role and flags until the developer has decided on the feature — except on a feature the AI has never
+    // judged (e.g. a committed feature added and included since the last run), which still gets its role and
+    // persona check.
     private static void ApplyToKeptFeature(Feature kept, DefineFeatureOutput item, IReadOnlyDictionary<string, Feature> committedById)
     {
+        var neverAssessed = kept.AiVerdict is null;
+
         kept.AiVerdict = item.AiAssessment.Verdict;
         kept.AiReason = item.AiAssessment.Reason;
 
-        if (kept.DevDecided)
+        if (kept.DevDecided && !neverAssessed)
         {
             return;
         }
