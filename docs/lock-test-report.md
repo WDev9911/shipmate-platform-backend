@@ -2,28 +2,30 @@
 
 - **Ngày chạy:** 2026-10-19
 - **Lệnh:** `dotnet test ShipMate.Tests`
-- **Kết quả:** **272 / 272 đạt**, 0 lỗi, 0 bỏ qua, chạy trong khoảng 0,17 giây.
-- **Không gọi AI thật.** AI được giả (`FakeAiGateway`) trả điểm cố định theo tên feature, nên không tốn token.
+- **Kết quả:** **293 / 293 đạt**, 0 lỗi, 0 bỏ qua, chạy trong khoảng 0,13 giây.
+- **Không gọi AI thật.** AI được giả (`FakeAiGateway`) trả điểm cố định theo tên feature và trả kết quả kiểm tra persona do test đặt sẵn, nên không tốn token.
+- **Không gọi GitHub thật.** Việc tạo nhánh được giả bằng NSubstitute.
 - **Không dùng DB thật.** Service thật chạy trên repository giả lưu trong bộ nhớ (`LockWorld`), giữ trạng thái giữa các bước nên một test đi được qua nhiều bước như người dùng thật.
 
 ## 1. Kết quả theo nhóm test
 
 | Nhóm | Số test | Đạt | Nội dung |
 |---|---:|---:|---|
-| **Scenarios.SoloDevLockScenarios** | 7 | 7 | Kịch bản dev solo: chấm điểm, kiểm tra, Lock, đóng băng |
+| **Scenarios.SoloDevLockScenarios** | 8 | 8 | Kịch bản dev solo: chấm điểm, kiểm tra, Lock, đóng băng, chấm lại sau khi sửa |
 | **Scenarios.TeamLockAndAssignmentScenarios** | 5 | 5 | Kịch bản team 3 người: Lock và nhận feature |
-| **Scenarios.FeatureChallengeScenarios** | 10 | 10 | Kịch bản sau Lock: thêm, thay, backup, từ chối |
+| **Scenarios.FeatureChallengeScenarios** | 14 | 14 | Kịch bản sau Lock: thêm, thay, backup, từ chối, giải phóng người nhận, kiểm tra persona |
 | Domain.LockGatePolicyTests | 13 | 13 | Luật 3 lớp kiểm tra |
 | Domain.FeatureChallengePolicyTests | 17 | 17 | Gợi ý phương án, tạo snapshot mới, xóa liên đới |
 | Domain.MvpSnapshotHasherTests | 4 | 4 | Hash snapshot |
+| Domain.FeatureEditContentTests | 4 | 4 | Sửa mô tả/phạm vi thì xóa điểm, chỉ đổi tên thì giữ |
 | Application.LockServiceTests | 16 | 16 | Lock, kiểm tra, quyền |
 | Application.FeatureChallengeServiceTests | 27 | 27 | Gửi, xác nhận, duyệt, từ chối |
-| Application.FeatureAssignmentTests | 19 | 19 | Nhận feature, backup |
+| Application.FeatureAssignmentTests | 25 | 25 | Nhận feature, backup, tạo nhánh GitHub, thử lại tạo nhánh |
 | Application.FeatureComplexityTests | 17 | 17 | Chấm điểm AI (AI giả) |
-| Application.SkillProfileTests | 9 | 9 | Khai báo skill |
+| Application.SkillProfileTests | 15 | 15 | Khai báo skill, khai skill khi nhận lời mời |
 | Application.LockedDefinitionTests | 11 | 11 | DEFINE đóng băng sau Lock |
 | Nhóm DEFINE (có từ trước) | 117 | 117 | FeatureReview, ProductDefinition, validators, policy... |
-| **Tổng** | **272** | **272** | |
+| **Tổng** | **293** | **293** | |
 
 ## 2. Câu chuyện dùng chung
 
@@ -42,6 +44,7 @@ Quy ước điểm: complexity 1 (dễ) đến 5 (khó). Budget = 10 điểm × 
 | A5 | Đã Lock. Thử: sửa feature, sửa ràng buộc, chạy AI phân tích, đổi Vision Prompt, chấm điểm lại | Cả 5 đều bị `PRODUCT_DEFINITION_LOCKED`. Tên feature và Vision Prompt không đổi. AI không bị gọi | Đạt |
 | A6 | Đã Lock, bấm Lock lần 2 | Bị từ chối, vẫn chỉ 1 snapshot, `FirstLockedAt` không đổi | Đạt |
 | A7 | Định nghĩa còn `Draft`, bấm Lock | Lỗi `PRODUCT_DEFINITION_NOT_READY_FOR_LOCK`, không có snapshot | Đạt |
+| A8 | 4 feature đã chấm điểm 2. Sửa mô tả "Đặt lịch khám" thành "kèm thanh toán trước", rồi bấm Lock. Sau đó chấm lại 4 | Lần đầu: `LOCK_GATE_FAILED`, đúng 1 feature thiếu điểm là "Đặt lịch khám". Chấm lại xong thì Lock được, snapshot ghi điểm 4 | Đạt |
 
 ## 4. Kịch bản B: team 3 người (Minh Manager skill 4, An skill 5, Bình skill 2, budget 30)
 
@@ -71,10 +74,26 @@ Snapshot v1: Đăng nhập 1, Bác sĩ tạo lịch 3, Xem lịch 2 (cần tạo
 | C7 | An (dev thường) gửi challenge, AI đề xuất 5, An chỉnh thành 2. An thử duyệt, rồi Manager duyệt | An không duyệt được (`WorkspacePermissionDenied`). Manager duyệt được, có v2 | Đạt |
 | C8 | Duyệt thêm thẳng feature điểm 5 (tổng thành 12 > 10) | Cổng kiểm tra chặn (`LOCK_GATE_FAILED`, vượt budget). Challenge vẫn `Open`, không có v2 | Đạt |
 | C9 | Chưa Lock mà gửi challenge | Lỗi không tìm thấy snapshot | Đạt |
+| C10 | Team 3 người (budget 30). An nhận "Bác sĩ tạo lịch", Bình nhận "Xem lịch" (phụ thuộc). Duyệt thay "Bác sĩ tạo lịch", lần đầu không chọn cách xử lý, lần sau chọn xóa liên đới | Lần đầu: `DEPENDENTS_RESOLUTION_REQUIRED` liệt kê "Xem lịch bác sĩ" kèm người nhận là Bình. Sau khi duyệt: cả 2 assignment có `releasedAt` (vẫn còn làm lịch sử), màn hình nhận feature không còn 2 feature đó | Đạt |
+| C11 | Budget đầy. Minh nhận "Xem lịch bác sĩ". Gửi "Báo cáo doanh thu" điểm 2 | Gợi ý bỏ "Xem lịch bác sĩ", kèm người đang nhận là Minh | Đạt |
+| C12 | Kiểm tra persona trước khi tái cấu trúc sang "Đăng nhập". AI giả báo lệch persona | Trả `personaConflict = true` kèm lý do, lưu vào challenge. Manager vẫn duyệt được, có v2 | Đạt |
+| C13 | Kiểm tra persona với feature không có trong snapshot. Sau đó AI trả kết quả sai | Lần đầu: `INVALID_REPLACEMENT_FEATURE`. Lần sau: lỗi AI trả sai. Challenge không lưu kết quả kiểm tra nào | Đạt |
 
-## 6. Những gì chưa test
+## 6. Các lỗ hổng đã vá và test tương ứng
 
-- **Không gọi AI thật.** Chất lượng điểm AI chấm và phần prompt chưa được kiểm chứng; chỉ test cách hệ thống xử lý kết quả AI (hợp lệ, sai thang, thiếu feature, JSON hỏng).
-- **Không có DB thật.** Chỉ mục unique chống hai người nhận cùng feature (FCFS) được giả lập bằng repository giả; hành vi thật của PostgreSQL chưa được kiểm tra tự động.
-- **Chưa test HTTP/controller và migration** (đã chạy migration vào DB dev và thấy route trên Swagger).
-- **Chưa làm và nên test sau khi làm:** Persona Conflict Check khi tái cấu trúc, tạo nhánh GitHub thật, SignalR, job quét feature backup.
+| Lỗ hổng | Cách vá | Test |
+|---|---|---|
+| L1 Sửa feature sau khi chấm điểm, Lock dùng điểm cũ | Sửa mô tả hoặc phạm vi thì xóa điểm | A8, `FeatureEditContentTests` |
+| L2 Hai lần Lock hoặc duyệt cùng lúc tranh version, lỗi 500 | Bắt lỗi unique, trả `SNAPSHOT_VERSION_CONFLICT` (409) | Chưa test tự động (cần PostgreSQL thật) |
+| L3 Bỏ feature đã có người nhận mà Manager không biết | Hiện tên người nhận, giải phóng khi duyệt | C10, C11 |
+| L4 Thành viên mới chưa khai skill làm chặn Lock | Bắt buộc khai skill khi nhận lời mời | `SkillProfileTests` |
+| N1 Tái cấu trúc sang feature lệch persona | AI kiểm tra, chỉ cảnh báo | C12, C13 |
+| N2a Chưa tạo nhánh GitHub thật | Tạo nhánh bằng token của dev nhận, có API thử lại | `FeatureAssignmentTests` |
+
+## 7. Những gì chưa test
+
+- **Không gọi AI thật.** Chất lượng điểm AI chấm, kết quả kiểm tra persona và phần prompt chưa được kiểm chứng. Chỉ test cách hệ thống xử lý kết quả AI (hợp lệ, sai thang, thiếu feature, JSON hỏng).
+- **Không có DB thật.** Chỉ mục unique chống hai người nhận cùng feature (FCFS) và chống tranh version snapshot được giả lập; hành vi thật của PostgreSQL chưa được kiểm tra tự động.
+- **Không gọi GitHub thật.** Chưa thử tạo nhánh trên một repo thật.
+- **Chưa test HTTP/controller.** Hai migration đã chạy vào DB dev.
+- **Chưa làm và nên test sau khi làm:** Branch Protection, SignalR, thông báo feature backup.

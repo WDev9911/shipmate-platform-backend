@@ -6,6 +6,24 @@ Tài liệu này mô tả **phần LOCK đã cài đặt**. Nguyên văn spec LO
 
 **Phân quyền.** Manager chấm điểm, bấm Lock, duyệt/từ chối Feature Challenge. Mọi thành viên active được xem snapshot, nhận feature và gửi Feature Challenge.
 
+## Tiến độ (cập nhật 2026-10-19)
+
+| Phần | Trạng thái | Mục |
+|---|---|---|
+| Đóng băng DEFINE sau Lock | Xong | `01-define.md` mục 23 |
+| Skill Profile, khai skill khi nhận lời mời | Xong | 1 |
+| Chấm điểm complexity (AI đề xuất, Manager xác nhận), xóa điểm khi nội dung đổi | Xong | 2 |
+| Kiểm tra trước Lock (Skill Ceiling, Budget, Dependency Integrity) | Xong | 3 |
+| Lock, MVP Snapshot, `FirstLockedAt`, chống tranh version | Xong | 4 |
+| Feature Assignment (FCFS) và tạo nhánh GitHub thật | Xong | 5 |
+| Feature Challenge (thêm, backup, thay thế), giải phóng người giữ feature bị bỏ | Xong | 6 |
+| Kiểm tra lệch persona khi tái cấu trúc (chỉ cảnh báo) | Xong | 6 |
+| Branch Protection, SignalR, thông báo feature backup | Chưa làm | Chưa làm |
+
+- Migration đã chạy vào DB dev: `AddLockFlow`, `LockFixesAndPersonaCheck`.
+- Unit test: 293/293 đạt. Chi tiết kịch bản ở `docs/lock-test-report.md`.
+- Code nằm trên nhánh `feature/lock` (commit `1bd3d02` và `f4b5b0f`), chưa merge vào `main`.
+
 ## 1. Skill Profile
 
 - Mỗi `WorkspaceMember` có `SkillLevel` (1–5, `null` nếu chưa khai báo), **gắn theo từng workspace**.
