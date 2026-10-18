@@ -98,10 +98,15 @@ public class WorkspaceService : IWorkspaceService
 
         if (request.VisionPrompt is not null && request.VisionPrompt != workspace.VisionPrompt)
         {
-            workspace.VisionPrompt = request.VisionPrompt;
-
-            // The vision prompt is DEFINE's input, so changing it also changes the product definition.
+            // The vision prompt is DEFINE's input, so changing it also changes the product definition —
+            // and once that is locked, the prompt is frozen with it.
             var productDefinition = await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId);
+            if (productDefinition is { IsLocked: true })
+            {
+                throw new ProductDefinitionLockedException();
+            }
+
+            workspace.VisionPrompt = request.VisionPrompt;
             productDefinition?.MarkModified(now);
         }
 
@@ -220,6 +225,20 @@ public class WorkspaceService : IWorkspaceService
         await _workspaceRepository.SaveChangesAsync();
 
         return _mapper.Map<WorkspaceMemberDto>(targetMembership);
+    }
+
+    public async Task<WorkspaceMemberDto> UpdateMySkillAsync(Guid userId, Guid workspaceId, UpdateMySkillRequest request)
+    {
+        await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
+
+        var membership = await GetActiveMembershipOrThrow(workspaceId, userId);
+        membership.SkillLevel = request.SkillLevel;
+        membership.UpdatedAt = DateTime.UtcNow;
+        _workspaceMemberRepository.Update(membership);
+
+        await _workspaceRepository.SaveChangesAsync();
+
+        return _mapper.Map<WorkspaceMemberDto>(membership);
     }
 
     public async Task RemoveMemberAsync(Guid userId, Guid workspaceId, Guid memberUserId)

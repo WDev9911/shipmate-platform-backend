@@ -60,6 +60,11 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
             await _productDefinitionRepository.AddAsync(productDefinition);
         }
 
+        if (productDefinition.IsLocked)
+        {
+            throw new ProductDefinitionLockedException();
+        }
+
         var isReanalysis = await _productDefinitionRepository.HasSuccessfulAnalysisRunAsync(productDefinition.Id);
         var features = productDefinition.Features.OrderBy(f => f.Position).ToList();
 

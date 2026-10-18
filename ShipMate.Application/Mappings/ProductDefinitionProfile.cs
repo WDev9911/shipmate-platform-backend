@@ -24,6 +24,13 @@ public class ProductDefinitionProfile : Profile
 
         CreateMap<FeatureDependency, FeatureDependencyDto>();
 
+        CreateMap<MvpSnapshot, MvpSnapshotDto>();
+        CreateMap<SnapshotFeature, SnapshotFeatureDto>();
+        CreateMap<SnapshotDependency, SnapshotDependencyDto>();
+
+        CreateMap<FeatureChallenge, FeatureChallengeDto>()
+            .ForMember(dest => dest.Recommendation, opt => opt.Ignore());
+
         CreateMap<Feature, KillListItemDto>();
 
         CreateMap<FeatureChangeLog, FeatureChangeLogDto>()

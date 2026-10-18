@@ -70,7 +70,9 @@ public class ProductDefinitionService : IProductDefinitionService
             throw new ProductDefinitionNotAnalyzedException();
         }
 
-        var readiness = ProductDefinitionReadinessPolicy.Evaluate(productDefinition);
+        ThrowIfLocked(productDefinition);
+
+        var readiness =ProductDefinitionReadinessPolicy.Evaluate(productDefinition);
         if (!readiness.IsReady)
         {
             throw new ProductDefinitionNotReadyException(
@@ -102,6 +104,8 @@ public class ProductDefinitionService : IProductDefinitionService
             await _productDefinitionRepository.AddAsync(productDefinition);
         }
 
+        ThrowIfLocked(productDefinition);
+
         var constraints = new ProjectConstraints
         {
             Customer = NullIfBlank(request.Customer),
@@ -114,6 +118,14 @@ public class ProductDefinitionService : IProductDefinitionService
         await _productDefinitionRepository.SaveChangesAsync();
 
         return _mapper.Map<ProductDefinitionDto>(productDefinition);
+    }
+
+    private static void ThrowIfLocked(ProductDefinition productDefinition)
+    {
+        if (productDefinition.IsLocked)
+        {
+            throw new ProductDefinitionLockedException();
+        }
     }
 
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -168,7 +180,9 @@ public class ProductDefinitionService : IProductDefinitionService
             await _productDefinitionRepository.AddAsync(productDefinition);
         }
 
-        var sources = new List<FeatureOrigin> { FeatureOrigin.FromCommittedList };
+        ThrowIfLocked(productDefinition);
+
+        var sources =new List<FeatureOrigin> { FeatureOrigin.FromCommittedList };
         var origin = FeatureOriginPolicy.Resolve(sources);
 
         var feature = new Feature
@@ -230,6 +244,8 @@ public class ProductDefinitionService : IProductDefinitionService
 
         var productDefinition = await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId)
             ?? throw new NotFoundException("Committed feature", featureId);
+
+        ThrowIfLocked(productDefinition);
 
         var feature = productDefinition.Features
             .FirstOrDefault(f => f.Id == featureId && f.Origin == FeatureOrigin.FromCommittedList)

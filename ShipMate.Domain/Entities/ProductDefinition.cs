@@ -24,11 +24,19 @@ public class ProductDefinition : BaseEntity
     public ICollection<Feature> Features { get; set; } = new List<Feature>();
     public ICollection<AiAnalysisRun> AnalysisRuns { get; set; } = new List<AiAnalysisRun>();
 
+    public bool IsLocked => Status == ProductDefinitionStatus.Locked;
+
     public int NextFeaturePosition() => Features.Count == 0 ? 0 : Features.Max(f => f.Position) + 1;
 
     public void MarkReadyForLock(DateTime now)
     {
         Status = ProductDefinitionStatus.ReadyForLock;
+        UpdatedAt = now;
+    }
+
+    public void MarkLocked(DateTime now)
+    {
+        Status = ProductDefinitionStatus.Locked;
         UpdatedAt = now;
     }
 

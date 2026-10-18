@@ -22,6 +22,11 @@ public class AppDbContext : DbContext
     public DbSet<FeatureDependency> FeatureDependencies => Set<FeatureDependency>();
     public DbSet<FeatureChangeLog> FeatureChangeLogs => Set<FeatureChangeLog>();
     public DbSet<AiAnalysisRun> AiAnalysisRuns => Set<AiAnalysisRun>();
+    public DbSet<MvpSnapshot> MvpSnapshots => Set<MvpSnapshot>();
+    public DbSet<SnapshotFeature> SnapshotFeatures => Set<SnapshotFeature>();
+    public DbSet<SnapshotDependency> SnapshotDependencies => Set<SnapshotDependency>();
+    public DbSet<FeatureAssignment> FeatureAssignments => Set<FeatureAssignment>();
+    public DbSet<FeatureChallenge> FeatureChallenges => Set<FeatureChallenge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

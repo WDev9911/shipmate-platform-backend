@@ -450,6 +450,11 @@ public class FeatureReviewService : IFeatureReviewService
         var productDefinition = await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId)
             ?? throw new NotFoundException("Feature", featureId);
 
+        if (productDefinition.IsLocked)
+        {
+            throw new ProductDefinitionLockedException();
+        }
+
         if (!await _productDefinitionRepository.HasSuccessfulAnalysisRunAsync(productDefinition.Id))
         {
             throw new ProductDefinitionNotAnalyzedException();

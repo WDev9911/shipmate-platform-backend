@@ -30,6 +30,8 @@ public static class DependencyInjection
         services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
         services.AddScoped<IWorkspaceMemberRepository, WorkspaceMemberRepository>();
         services.AddScoped<IProductDefinitionRepository, ProductDefinitionRepository>();
+        services.AddScoped<IFeatureAssignmentRepository, FeatureAssignmentRepository>();
+        services.AddScoped<IFeatureChallengeRepository, FeatureChallengeRepository>();
 
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IJwtTokenService, JwtTokenService>();

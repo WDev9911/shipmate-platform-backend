@@ -10,5 +10,6 @@ public class WorkspaceMemberDto
     public string DisplayName { get; set; } = string.Empty;
     public WorkspaceMemberRole Role { get; set; }
     public WorkspaceMemberStatus Status { get; set; }
+    public int? SkillLevel { get; set; }
     public DateTime CreatedAt { get; set; }
 }

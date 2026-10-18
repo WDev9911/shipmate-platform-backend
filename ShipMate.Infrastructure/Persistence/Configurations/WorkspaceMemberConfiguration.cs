@@ -45,6 +45,8 @@ public class WorkspaceMemberConfiguration : IEntityTypeConfiguration<WorkspaceMe
             .HasMaxLength(20)
             .HasDefaultValue(WorkspaceMemberStatus.Active);
 
+        builder.Property(m => m.SkillLevel).HasColumnName("skill_level");
+
         builder.Property(m => m.CreatedAt).HasColumnName("created_at");
         builder.Property(m => m.UpdatedAt).HasColumnName("updated_at");
 

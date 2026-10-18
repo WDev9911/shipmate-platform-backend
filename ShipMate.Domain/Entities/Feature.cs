@@ -33,6 +33,10 @@ public class Feature : BaseEntity
 
     public bool DevDecided { get; set; }
 
+    // LOCK step 1: the AI proposes a 1-5 score, the developer confirms or adjusts it. Both stay null until scored.
+    public int? ProposedComplexity { get; set; }
+    public int? Complexity { get; set; }
+
     // Display order; also breaks ties when merging two features of equal origin priority.
     public int Position { get; set; }
 
