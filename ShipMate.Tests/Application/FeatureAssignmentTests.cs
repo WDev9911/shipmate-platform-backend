@@ -15,6 +15,10 @@ public class FeatureAssignmentTests
     private readonly IFeatureAssignmentRepository _assignments = Substitute.For<IFeatureAssignmentRepository>();
     private readonly IWorkspaceMemberRepository _members = Substitute.For<IWorkspaceMemberRepository>();
     private readonly IWorkspaceAccessGuard _guard = Substitute.For<IWorkspaceAccessGuard>();
+    private readonly IGitHubOAuthService _gitHub = Substitute.For<IGitHubOAuthService>();
+    private readonly IGitHubConnectionRepository _connections = Substitute.For<IGitHubConnectionRepository>();
+    private readonly IEncryptionService _encryption = Substitute.For<IEncryptionService>();
+    private readonly Workspace _workspace = new();
     private readonly FeatureAssignmentService _service;
     private readonly Guid _workspaceId = Guid.NewGuid();
     private readonly WorkspaceMember _me;
@@ -23,7 +27,8 @@ public class FeatureAssignmentTests
 
     public FeatureAssignmentTests()
     {
-        _service = new FeatureAssignmentService(_definitions, _assignments, _members, _guard);
+        _service = new FeatureAssignmentService(_definitions, _assignments, _members, _guard, _gitHub, _connections, _encryption);
+        _guard.GetWorkspaceAsMemberAsync(Arg.Any<Guid>(), _workspaceId).Returns(_workspace);
 
         _me = Member("Me", skill: 3, github: "me-dev");
         _members.GetByWorkspaceIdAsync(_workspaceId).Returns([_me]);
@@ -135,6 +140,86 @@ public class FeatureAssignmentTests
         _me.Status = WorkspaceMemberStatus.Invited;
 
         await Assert.ThrowsAsync<NotFoundException>(() => Claim(_easy));
+    }
+
+    // ---- creating the branch on GitHub ----
+
+    private void GivenLinkedRepoAndMyGitHubToken()
+    {
+        _workspace.GitHubRepoOwner = "clinic";
+        _workspace.GitHubRepoName = "booking";
+        _connections.GetByUserIdAsync(_me.UserId).Returns(new GitHubConnection { GitHubAccessTokenEncrypted = "enc" });
+        _encryption.Decrypt("enc").Returns("my-token");
+    }
+
+    [Fact]
+    public async Task Claim_WithALinkedRepo_CreatesTheBranchWithTheDevelopersOwnToken()
+    {
+        GivenLinkedRepoAndMyGitHubToken();
+
+        var result = await Claim(_easy);
+
+        Assert.True(result.BranchCreated);
+        await _gitHub.Received(1).CreateBranchFromDefaultAsync("my-token", "clinic", "booking", result.BranchName);
+        await _assignments.Received(1).SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Claim_WithoutALinkedRepo_OnlyStoresTheBranchName()
+    {
+        var result = await Claim(_easy);
+
+        Assert.False(result.BranchCreated);
+        await _gitHub.DidNotReceiveWithAnyArgs().CreateBranchFromDefaultAsync(default!, default!, default!, default!);
+    }
+
+    [Fact]
+    public async Task Claim_GitHubRefuses_TheClaimStillStandsWithoutABranch()
+    {
+        GivenLinkedRepoAndMyGitHubToken();
+        _gitHub.CreateBranchFromDefaultAsync(default!, default!, default!, default!)
+            .ReturnsForAnyArgs<Task>(_ => throw new GitHubBranchCreationFailedException());
+
+        var result = await Claim(_easy);
+
+        Assert.False(result.BranchCreated);
+        await _assignments.Received(1).TryAddAsync(Arg.Any<FeatureAssignment>());
+    }
+
+    [Fact]
+    public async Task RetryBranch_AfterAFailure_CreatesItNow()
+    {
+        GivenLinkedRepoAndMyGitHubToken();
+        var assignment = new FeatureAssignment
+        {
+            WorkspaceId = _workspaceId, FeatureId = _easy.FeatureId, AssignedUserId = _me.UserId, BranchName = "feature/x"
+        };
+        _assignments.GetByWorkspaceIdAsync(_workspaceId).Returns([assignment]);
+
+        var result = await _service.RetryBranchAsync(_me.UserId, _workspaceId, _easy.FeatureId);
+
+        Assert.True(result.BranchCreated);
+        Assert.NotNull(assignment.BranchCreatedAt);
+    }
+
+    [Fact]
+    public async Task RetryBranch_WithoutALinkedRepo_IsRejected()
+    {
+        _assignments.GetByWorkspaceIdAsync(_workspaceId).Returns(
+            [new FeatureAssignment { FeatureId = _easy.FeatureId, AssignedUserId = _me.UserId, BranchName = "feature/x" }]);
+
+        await Assert.ThrowsAsync<WorkspaceRepoNotLinkedException>(() =>
+            _service.RetryBranchAsync(_me.UserId, _workspaceId, _easy.FeatureId));
+    }
+
+    [Fact]
+    public async Task RetryBranch_OnSomeoneElsesFeature_IsNotFound()
+    {
+        _assignments.GetByWorkspaceIdAsync(_workspaceId).Returns(
+            [new FeatureAssignment { FeatureId = _easy.FeatureId, AssignedUserId = Guid.NewGuid(), BranchName = "feature/x" }]);
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            _service.RetryBranchAsync(_me.UserId, _workspaceId, _easy.FeatureId));
     }
 
     // ---- backup and replaced features ----

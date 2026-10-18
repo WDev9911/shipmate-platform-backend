@@ -36,4 +36,9 @@ public class FeatureChallenge : BaseEntity
     public Guid? ReplacementFeatureId { get; set; }
     public bool CommittedRemovalConfirmed { get; set; }
     public int? ResultingSnapshotVersion { get; set; }
+
+    // Last Persona Conflict Check of a replacement the Manager considered (Restructure). A warning, never a block.
+    public Guid? PersonaCheckFeatureId { get; set; }
+    public bool? PersonaConflict { get; set; }
+    public string? PersonaConflictReason { get; set; }
 }

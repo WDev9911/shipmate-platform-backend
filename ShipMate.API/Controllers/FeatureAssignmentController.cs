@@ -33,4 +33,11 @@ public class FeatureAssignmentController : ControllerBase
         var result = await _featureAssignmentService.ClaimAsync(_currentUserService.UserId!.Value, workspaceId, featureId);
         return StatusCode(StatusCodes.Status201Created, result);
     }
+
+    [HttpPost("{featureId:guid}/branch")]
+    public async Task<IActionResult> RetryBranch(Guid workspaceId, Guid featureId)
+    {
+        var result = await _featureAssignmentService.RetryBranchAsync(_currentUserService.UserId!.Value, workspaceId, featureId);
+        return Ok(result);
+    }
 }

@@ -11,4 +11,6 @@ public interface IFeatureAssignmentRepository
     /// so of several simultaneous claims exactly one wins.
     /// </summary>
     Task<bool> TryAddAsync(FeatureAssignment assignment);
+
+    Task<bool> SaveChangesAsync();
 }

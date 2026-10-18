@@ -17,7 +17,7 @@ public interface IWorkspaceService
     Task RemoveMemberAsync(Guid requesterId, Guid workspaceId, Guid memberUserId);
 
     Task<List<WorkspaceInvitationDto>> GetMyInvitationsAsync(Guid userId);
-    Task<WorkspaceMemberDto> AcceptInvitationAsync(Guid userId, Guid workspaceId);
+    Task<WorkspaceMemberDto> AcceptInvitationAsync(Guid userId, Guid workspaceId, AcceptInvitationRequest request);
     Task DeclineInvitationAsync(Guid userId, Guid workspaceId);
 
     Task<List<GitHubRepoDto>> GetAvailableGitHubReposAsync(Guid userId, Guid workspaceId);

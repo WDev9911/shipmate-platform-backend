@@ -40,6 +40,9 @@ public class FeatureChallengeConfiguration : IEntityTypeConfiguration<FeatureCha
         builder.Property(c => c.ReplacementFeatureId).HasColumnName("replacement_feature_id");
         builder.Property(c => c.CommittedRemovalConfirmed).HasColumnName("committed_removal_confirmed");
         builder.Property(c => c.ResultingSnapshotVersion).HasColumnName("resulting_snapshot_version");
+        builder.Property(c => c.PersonaCheckFeatureId).HasColumnName("persona_check_feature_id");
+        builder.Property(c => c.PersonaConflict).HasColumnName("persona_conflict");
+        builder.Property(c => c.PersonaConflictReason).HasColumnName("persona_conflict_reason").HasColumnType("text");
 
         builder.Property(c => c.CreatedAt).HasColumnName("created_at");
 

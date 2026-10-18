@@ -278,6 +278,10 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("assigned_user_id");
 
+                    b.Property<DateTime?>("BranchCreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("branch_created_at");
+
                     b.Property<string>("BranchName")
                         .IsRequired()
                         .HasMaxLength(300)
@@ -291,6 +295,10 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("FeatureId")
                         .HasColumnType("uuid")
                         .HasColumnName("feature_id");
+
+                    b.Property<DateTime?>("ReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at");
 
                     b.Property<Guid>("WorkspaceId")
                         .HasColumnType("uuid")
@@ -359,6 +367,18 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("name");
+
+                    b.Property<Guid?>("PersonaCheckFeatureId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("persona_check_feature_id");
+
+                    b.Property<bool?>("PersonaConflict")
+                        .HasColumnType("boolean")
+                        .HasColumnName("persona_conflict");
+
+                    b.Property<string>("PersonaConflictReason")
+                        .HasColumnType("text")
+                        .HasColumnName("persona_conflict_reason");
 
                     b.Property<int?>("ProposedComplexity")
                         .HasColumnType("integer")

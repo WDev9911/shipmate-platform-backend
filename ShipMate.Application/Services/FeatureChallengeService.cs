@@ -1,4 +1,5 @@
 using AutoMapper;
+using ShipMate.Application.Ai.Define;
 using ShipMate.Application.Ai.Lock;
 using ShipMate.Application.DTOs.ProductDefinitions;
 using ShipMate.Application.Exceptions;
@@ -14,6 +15,7 @@ public class FeatureChallengeService : IFeatureChallengeService
 {
     private readonly IFeatureChallengeRepository _challengeRepository;
     private readonly IProductDefinitionRepository _productDefinitionRepository;
+    private readonly IFeatureAssignmentRepository _assignmentRepository;
     private readonly IWorkspaceMemberRepository _workspaceMemberRepository;
     private readonly IWorkspaceAccessGuard _workspaceAccessGuard;
     private readonly IAiGateway _aiGateway;
@@ -22,6 +24,7 @@ public class FeatureChallengeService : IFeatureChallengeService
     public FeatureChallengeService(
         IFeatureChallengeRepository challengeRepository,
         IProductDefinitionRepository productDefinitionRepository,
+        IFeatureAssignmentRepository assignmentRepository,
         IWorkspaceMemberRepository workspaceMemberRepository,
         IWorkspaceAccessGuard workspaceAccessGuard,
         IAiGateway aiGateway,
@@ -29,6 +32,7 @@ public class FeatureChallengeService : IFeatureChallengeService
     {
         _challengeRepository = challengeRepository;
         _productDefinitionRepository = productDefinitionRepository;
+        _assignmentRepository = assignmentRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
         _workspaceAccessGuard = workspaceAccessGuard;
         _aiGateway = aiGateway;
@@ -140,6 +144,7 @@ public class FeatureChallengeService : IFeatureChallengeService
         var snapshot = await GetSnapshotOrThrow(workspaceId);
         var skills = await GetActiveMemberSkillsAsync(workspaceId);
         var next = MvpSnapshotEvolution.NextVersion(snapshot, userId, skills.Count);
+        var assignments = await GetActiveAssignmentsAsync(workspaceId);
 
         var removedCommitted = false;
         switch (request.Action)
@@ -158,7 +163,7 @@ public class FeatureChallengeService : IFeatureChallengeService
                 break;
 
             case ChallengeAction.RemoveAndReplace:
-                removedCommitted = ApplyRemoveAndReplace(snapshot, next, challenge, request);
+                removedCommitted = ApplyRemoveAndReplace(snapshot, next, challenge, request, assignments);
                 break;
         }
 
@@ -171,9 +176,12 @@ public class FeatureChallengeService : IFeatureChallengeService
         next.Hash = MvpSnapshotHasher.Compute(next);
         await _productDefinitionRepository.AddSnapshotAsync(next);
 
+        var now = DateTime.UtcNow;
+        ReleaseReplacedAssignments(snapshot, next, assignments, now);
+
         challenge.Status = ChallengeStatus.Approved;
         challenge.DecidedByUserId = userId;
-        challenge.DecidedAt = DateTime.UtcNow;
+        challenge.DecidedAt = now;
         challenge.Action = request.Action;
         challenge.ResultingSnapshotVersion = next.Version;
         if (request.Action == ChallengeAction.RemoveAndReplace)
@@ -191,7 +199,8 @@ public class FeatureChallengeService : IFeatureChallengeService
 
     // Returns whether the removed feature came from the committed list.
     private static bool ApplyRemoveAndReplace(
-        MvpSnapshot snapshot, MvpSnapshot next, FeatureChallenge challenge, ApproveChallengeRequest request)
+        MvpSnapshot snapshot, MvpSnapshot next, FeatureChallenge challenge, ApproveChallengeRequest request,
+        IReadOnlyList<FeatureAssignment> assignments)
     {
         var removedId = request.RemoveFeatureId!.Value;
         var removed = snapshot.Features.FirstOrDefault(f => f.FeatureId == removedId && f.Status != SnapshotFeatureStatus.Replaced)
@@ -209,7 +218,8 @@ public class FeatureChallengeService : IFeatureChallengeService
         switch (error)
         {
             case EvolutionError.DependentsResolutionRequired:
-                throw new DependentsResolutionRequiredException(ReferencesTo(snapshot, MvpSnapshotEvolution.DependentsOf(snapshot, removedId)));
+                throw new DependentsResolutionRequiredException(
+                    Affected(snapshot, MvpSnapshotEvolution.DependentsOf(snapshot, removedId), assignments));
             case EvolutionError.ReplacementInvalid:
                 throw new InvalidReplacementException();
             case EvolutionError.RemovedFeatureNotFound:
@@ -217,6 +227,52 @@ public class FeatureChallengeService : IFeatureChallengeService
         }
 
         return removedCommitted;
+    }
+
+    public async Task<ReplacementCheckDto> CheckReplacementAsync(
+        Guid userId, Guid workspaceId, Guid challengeId, ReplacementCheckRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
+
+        var challenge = await GetChallengeOrThrow(workspaceId, challengeId);
+        if (challenge.Status != ChallengeStatus.Open)
+        {
+            throw new ChallengeAlreadyDecidedException();
+        }
+
+        var snapshot = await GetSnapshotOrThrow(workspaceId);
+        var replacement = snapshot.Features.FirstOrDefault(f =>
+                f.FeatureId == request.ReplacementFeatureId && f.Status != SnapshotFeatureStatus.Replaced)
+            ?? throw new InvalidReplacementException();
+
+        var persona = (await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId))?.LockedPersona
+            ?? throw new ProductDefinitionNotAnalyzedException();
+
+        var result = await PersonaConflictClient.CheckAsync(_aiGateway, new PersonaConflictInput
+        {
+            Persona = new DefinePersona
+            {
+                PrimaryPersona = persona.PrimaryPersona,
+                Reason = persona.Reason,
+                SupportingRoles = persona.SupportingRoles
+                    .Select(r => new DefineSupportingRole { Name = r.Name, Reason = r.Reason })
+                    .ToList()
+            },
+            Feature = new PersonaConflictFeatureInput
+            {
+                Name = replacement.Name,
+                Description = replacement.Description,
+                Scope = replacement.Scope
+            }
+        }, cancellationToken);
+
+        challenge.PersonaCheckFeatureId = replacement.FeatureId;
+        challenge.PersonaConflict = result.PersonaConflict;
+        challenge.PersonaConflictReason = result.Reason;
+        await _challengeRepository.SaveChangesAsync();
+
+        return new ReplacementCheckDto(replacement.FeatureId, result.PersonaConflict, result.Reason);
     }
 
     public async Task<FeatureChallengeDto> RejectAsync(
@@ -247,6 +303,7 @@ public class FeatureChallengeService : IFeatureChallengeService
         if (challenge.Status == ChallengeStatus.Open && challenge.Complexity is not null)
         {
             var skills = await GetActiveMemberSkillsAsync(challenge.WorkspaceId);
+            var assignments = await GetActiveAssignmentsAsync(challenge.WorkspaceId);
             var recommendation = ChallengeRecommendationPolicy.Recommend(
                 MvpSnapshotEvolution.ActiveFeatures(snapshot), challenge.Complexity.Value, skills);
 
@@ -254,22 +311,53 @@ public class FeatureChallengeService : IFeatureChallengeService
             {
                 Action = recommendation.Action,
                 FeatureToRemove = recommendation.FeatureToRemove is { } candidate
-                    ? new RemovalCandidateDto(candidate.Id, candidate.Name, candidate.Complexity!.Value, candidate.IsCommitted)
+                    ? new RemovalCandidateDto(candidate.Id, candidate.Name, candidate.Complexity!.Value,
+                        candidate.IsCommitted, AssigneeOf(candidate.Id, assignments))
                     : null,
                 AffectedDependents = recommendation.FeatureToRemove is { } removal
-                    ? ReferencesTo(snapshot, MvpSnapshotEvolution.DependentsOf(snapshot, removal.Id))
-                    : new List<FeatureReferenceDto>()
+                    ? Affected(snapshot, MvpSnapshotEvolution.DependentsOf(snapshot, removal.Id), assignments)
+                    : new List<AffectedFeatureDto>()
             };
         }
 
         return dto;
     }
 
-    private static List<FeatureReferenceDto> ReferencesTo(MvpSnapshot snapshot, IEnumerable<Guid> featureIds)
+    // A feature replaced by this approval is no longer held by anyone; its assignment stays as history.
+    private static void ReleaseReplacedAssignments(
+        MvpSnapshot previous, MvpSnapshot next, IEnumerable<FeatureAssignment> assignments, DateTime now)
+    {
+        var alreadyReplaced = previous.Features
+            .Where(f => f.Status == SnapshotFeatureStatus.Replaced)
+            .Select(f => f.FeatureId)
+            .ToHashSet();
+        var replacedNow = next.Features
+            .Where(f => f.Status == SnapshotFeatureStatus.Replaced && !alreadyReplaced.Contains(f.FeatureId))
+            .Select(f => f.FeatureId)
+            .ToHashSet();
+
+        foreach (var assignment in assignments.Where(a => replacedNow.Contains(a.FeatureId)))
+        {
+            assignment.ReleasedAt = now;
+        }
+    }
+
+    private static List<AffectedFeatureDto> Affected(
+        MvpSnapshot snapshot, IEnumerable<Guid> featureIds, IReadOnlyList<FeatureAssignment> assignments)
     {
         var namesById = snapshot.Features.ToDictionary(f => f.FeatureId, f => f.Name);
-        return featureIds.Select(id => new FeatureReferenceDto(id, namesById[id])).ToList();
+        return featureIds
+            .Select(id => new AffectedFeatureDto(id, namesById[id], AssigneeOf(id, assignments)))
+            .ToList();
     }
+
+    private static string? AssigneeOf(Guid featureId, IReadOnlyList<FeatureAssignment> assignments) =>
+        assignments.FirstOrDefault(a => a.FeatureId == featureId)?.AssignedUser.DisplayName;
+
+    private async Task<List<FeatureAssignment>> GetActiveAssignmentsAsync(Guid workspaceId) =>
+        (await _assignmentRepository.GetByWorkspaceIdAsync(workspaceId))
+            .Where(a => a.ReleasedAt is null)
+            .ToList();
 
     private async Task<MvpSnapshot> GetSnapshotOrThrow(Guid workspaceId) =>
         await _productDefinitionRepository.GetLatestSnapshotAsync(workspaceId)

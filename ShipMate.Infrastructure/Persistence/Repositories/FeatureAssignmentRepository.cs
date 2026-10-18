@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Domain.Entities;
 
@@ -7,8 +6,6 @@ namespace ShipMate.Infrastructure.Persistence.Repositories;
 
 public class FeatureAssignmentRepository : IFeatureAssignmentRepository
 {
-    private const string UniqueViolation = "23505";
-
     private readonly AppDbContext _context;
 
     public FeatureAssignmentRepository(AppDbContext context)
@@ -30,10 +27,13 @@ public class FeatureAssignmentRepository : IFeatureAssignmentRepository
             await _context.SaveChangesAsync();
             return true;
         }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: UniqueViolation })
+        catch (DbUpdateException ex) when (UniqueViolation.Matches(ex))
         {
             _context.Entry(assignment).State = EntityState.Detached;
             return false;
         }
     }
+
+    public async Task<bool> SaveChangesAsync() =>
+        await _context.SaveChangesAsync() > 0;
 }

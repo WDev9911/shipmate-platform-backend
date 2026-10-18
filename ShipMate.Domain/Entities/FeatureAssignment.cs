@@ -14,6 +14,11 @@ public class FeatureAssignment : BaseEntity
     public Guid AssignedUserId { get; set; }
     public User AssignedUser { get; set; } = null!;
 
-    // Only the name is stored; creating the branch on GitHub is BUILD's infrastructure.
     public string BranchName { get; set; } = string.Empty;
+
+    // When the branch was created on GitHub; null while the workspace has no linked repository or GitHub refused.
+    public DateTime? BranchCreatedAt { get; set; }
+
+    // Set when a Feature Challenge replaces the feature: the developer no longer holds it. The row stays as history.
+    public DateTime? ReleasedAt { get; set; }
 }

@@ -170,6 +170,27 @@ public class SoloDevLockScenarios
         Assert.Equal(firstLockedAt, world.Workspace.FirstLockedAt);
     }
 
+    [Fact(DisplayName = "A8 Chấm điểm xong rồi sửa mô tả feature -> điểm bị xóa, Lock bị chặn tới khi chấm lại")]
+    public async Task A8_EditingAScoredFeatureRequiresRescoring()
+    {
+        var (world, f) = Clinic(skill: 4, login: 2, slots: 2, view: 2, book: 2);
+
+        await world.Review.EditAsync(world.ManagerId, world.WorkspaceId, f[Book].Id,
+            new UpdateFeatureRequest { Description = "Đặt lịch khám, kèm thanh toán trước" });
+        await world.DefinitionService.MarkReadyForLockAsync(world.ManagerId, world.WorkspaceId);
+
+        var ex = await Assert.ThrowsAsync<LockGateFailedException>(() => world.LockNow());
+        Assert.Equal(Book, Assert.Single(ex.Gate.UnscoredFeatures).Name);
+
+        await world.Complexity.SetAsync(world.ManagerId, world.WorkspaceId, new SetComplexityRequest
+        {
+            Items = [new FeatureComplexityItem { FeatureId = f[Book].Id, Complexity = 4 }]
+        });
+        await world.LockNow();
+
+        Assert.Equal(4, world.InSnapshot(world.LatestSnapshot, Book).Complexity);
+    }
+
     [Fact(DisplayName = "A7 Product Definition còn ở Draft (chưa READY_FOR_LOCK) -> không Lock được")]
     public async Task A7_DraftCannotLock()
     {
@@ -464,6 +485,100 @@ public class FeatureChallengeScenarios
         Assert.Single(world.Definitions.Snapshots);
         var saved = await world.Challenge.GetAsync(world.ManagerId, world.WorkspaceId, challenge.Id);
         Assert.Equal(ChallengeStatus.Open, saved.Status);
+    }
+
+    [Fact(DisplayName = "C10 Bỏ feature đã có người nhận: Manager thấy tên người nhận trước khi duyệt; duyệt xong người đó được giải phóng")]
+    public async Task C10_RemovingAnAssignedFeatureShowsAndReleasesTheAssignee()
+    {
+        var world = await LockedSolo();
+        var an = world.AddMember("An", WorkspaceMemberRole.Developer, 4);
+        var binh = world.AddMember("Bình", WorkspaceMemberRole.Developer, 3); // budget 30
+        var slotsId = IdOf(world, "Bác sĩ tạo lịch khám");
+        var viewId = IdOf(world, "Xem lịch bác sĩ");
+        await world.Assignment.ClaimAsync(an.UserId, world.WorkspaceId, slotsId);
+        await world.Assignment.ClaimAsync(binh.UserId, world.WorkspaceId, viewId);
+
+        var challenge = await world.SubmitChallenge(world.Manager, "Lịch khám tự động", 3, 3);
+        var request = new ApproveChallengeRequest { Action = ChallengeAction.RemoveAndReplace, RemoveFeatureId = slotsId };
+
+        // Trước khi chọn cách xử lý: lỗi liệt kê feature phụ thuộc KÈM người đang nhận
+        var ex = await Assert.ThrowsAsync<DependentsResolutionRequiredException>(() =>
+            world.Challenge.ApproveAsync(world.ManagerId, world.WorkspaceId, challenge.Id, request));
+        var affected = Assert.Single(ex.AffectedDependents);
+        Assert.Equal("Xem lịch bác sĩ", affected.Name);
+        Assert.Equal("Bình", affected.AssignedTo);
+
+        request.DependentsResolution = RemovalDependentsResolution.RemoveDependents;
+        await world.Challenge.ApproveAsync(world.ManagerId, world.WorkspaceId, challenge.Id, request);
+
+        // Cả An và Bình được giải phóng; hàng assignment vẫn còn để làm lịch sử
+        var all = await world.Assignments.GetByWorkspaceIdAsync(world.WorkspaceId);
+        Assert.Equal(2, all.Count);
+        Assert.All(all, a => Assert.NotNull(a.ReleasedAt));
+        var overview = await world.Assignment.GetOverviewAsync(world.ManagerId, world.WorkspaceId);
+        Assert.DoesNotContain(overview, o => o.FeatureId == slotsId || o.FeatureId == viewId);
+    }
+
+    [Fact(DisplayName = "C11 Gợi ý thay thế hiện tên người đang nhận feature bị đề xuất bỏ")]
+    public async Task C11_RecommendationShowsTheAssignee()
+    {
+        var world = await LockedSolo();
+        await world.SubmitChallenge(world.Manager, "Nhắc lịch khám", 3, 3);
+        var first = (await world.Challenges.GetByWorkspaceIdAsync(world.WorkspaceId)).First();
+        await world.Challenge.ApproveAsync(world.ManagerId, world.WorkspaceId, first.Id,
+            new ApproveChallengeRequest { Action = ChallengeAction.AddDirectly }); // tổng = 10, đầy budget
+        await world.Assignment.ClaimAsync(world.ManagerId, world.WorkspaceId, IdOf(world, "Xem lịch bác sĩ"));
+
+        var second = await world.SubmitChallenge(world.Manager, "Báo cáo doanh thu", 2, 2);
+        var detail = await world.Challenge.GetAsync(world.ManagerId, world.WorkspaceId, second.Id);
+
+        Assert.Equal("Xem lịch bác sĩ", detail.Recommendation!.FeatureToRemove!.Name);
+        Assert.Equal("Minh", detail.Recommendation.FeatureToRemove.AssignedTo);
+    }
+
+    [Fact(DisplayName = "C12 Tái cấu trúc sang feature khác: AI kiểm tra lệch persona -> chỉ cảnh báo, lưu vào challenge, Manager vẫn duyệt được")]
+    public async Task C12_PersonaCheckWarnsButDoesNotBlock()
+    {
+        var world = await LockedSolo();
+        var challenge = await world.SubmitChallenge(world.Manager, "Lịch khám tự động", 3, 3);
+        var loginId = IdOf(world, "Đăng nhập");
+        world.Ai.PersonaAnswer = (true, "Đăng nhập không thay được việc bác sĩ tạo lịch");
+
+        var check = await world.Challenge.CheckReplacementAsync(world.ManagerId, world.WorkspaceId, challenge.Id,
+            new ReplacementCheckRequest { ReplacementFeatureId = loginId });
+
+        Assert.True(check.PersonaConflict);
+        Assert.Equal("Đăng nhập không thay được việc bác sĩ tạo lịch", check.Reason);
+        var saved = (await world.Challenges.GetByIdAsync(world.WorkspaceId, challenge.Id))!;
+        Assert.Equal(loginId, saved.PersonaCheckFeatureId);
+        Assert.True(saved.PersonaConflict);
+
+        await world.Challenge.ApproveAsync(world.ManagerId, world.WorkspaceId, challenge.Id, new ApproveChallengeRequest
+        {
+            Action = ChallengeAction.RemoveAndReplace,
+            RemoveFeatureId = IdOf(world, "Bác sĩ tạo lịch khám"),
+            DependentsResolution = RemovalDependentsResolution.Restructure,
+            ReplacementFeatureId = loginId
+        });
+        Assert.Equal(2, world.LatestSnapshot.Version);
+    }
+
+    [Fact(DisplayName = "C13 Kiểm tra persona: feature thay thế không có trong snapshot -> từ chối; AI trả kết quả sai -> lỗi, không lưu gì")]
+    public async Task C13_PersonaCheckRejectsBadInput()
+    {
+        var world = await LockedSolo();
+        var challenge = await world.SubmitChallenge(world.Manager, "Lịch khám tự động", 3, 3);
+
+        await Assert.ThrowsAsync<InvalidReplacementException>(() =>
+            world.Challenge.CheckReplacementAsync(world.ManagerId, world.WorkspaceId, challenge.Id,
+                new ReplacementCheckRequest { ReplacementFeatureId = Guid.NewGuid() }));
+
+        world.Ai.PersonaAnswer = null;
+        await Assert.ThrowsAsync<AiOutputInvalidException>(() =>
+            world.Challenge.CheckReplacementAsync(world.ManagerId, world.WorkspaceId, challenge.Id,
+                new ReplacementCheckRequest { ReplacementFeatureId = IdOf(world, "Đăng nhập") }));
+
+        Assert.Null((await world.Challenges.GetByIdAsync(world.WorkspaceId, challenge.Id))!.PersonaConflict);
     }
 
     [Fact(DisplayName = "C9 Chưa Lock thì không gửi được challenge")]

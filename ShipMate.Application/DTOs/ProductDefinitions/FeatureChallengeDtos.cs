@@ -27,6 +27,13 @@ public class ApproveChallengeRequest
     public bool ConfirmCommittedRemoval { get; set; }
 }
 
+public class ReplacementCheckRequest
+{
+    public Guid ReplacementFeatureId { get; set; }
+}
+
+public record ReplacementCheckDto(Guid FeatureId, bool PersonaConflict, string Reason);
+
 public class RejectChallengeRequest
 {
     public string? Reason { get; set; }
@@ -53,6 +60,11 @@ public class FeatureChallengeDto
     public DateTime? DecidedAt { get; set; }
     public string? RejectionReason { get; set; }
     public int? ResultingSnapshotVersion { get; set; }
+
+    // Last persona check of a candidate replacement, if any.
+    public Guid? PersonaCheckFeatureId { get; set; }
+    public bool? PersonaConflict { get; set; }
+    public string? PersonaConflictReason { get; set; }
 }
 
 public class ChallengeRecommendationDto
@@ -62,7 +74,10 @@ public class ChallengeRecommendationDto
     public RemovalCandidateDto? FeatureToRemove { get; set; }
 
     // Features hit by removing the candidate, directly or through other features, in one list.
-    public List<FeatureReferenceDto> AffectedDependents { get; set; } = new();
+    public List<AffectedFeatureDto> AffectedDependents { get; set; } = new();
 }
 
-public record RemovalCandidateDto(Guid Id, string Name, int Complexity, bool IsCommitted);
+// AssignedTo is the display name of the developer currently holding the feature, so the Manager sees who loses it.
+public record RemovalCandidateDto(Guid Id, string Name, int Complexity, bool IsCommitted, string? AssignedTo);
+
+public record AffectedFeatureDto(Guid Id, string Name, string? AssignedTo);

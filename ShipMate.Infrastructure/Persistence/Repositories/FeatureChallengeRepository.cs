@@ -27,5 +27,5 @@ public class FeatureChallengeRepository : IFeatureChallengeRepository
         await _context.FeatureChallenges.AddAsync(challenge);
 
     public async Task<bool> SaveChangesAsync() =>
-        await _context.SaveChangesAsync() > 0;
+        await UniqueViolation.SaveGuardingSnapshotVersionAsync(_context);
 }

@@ -42,6 +42,34 @@ public class Feature : BaseEntity
 
     public DateTime? UpdatedAt { get; set; }
 
+    // A null part is left unchanged. A new description or scope means new work, so any complexity score is
+    // dropped and the feature must be scored again before Lock; a rename alone keeps it.
+    public void EditContent(string? name, string? description, string? scope)
+    {
+        if (name is not null)
+        {
+            Name = name;
+        }
+
+        var workChanged = (description is not null && description != Description) || (scope is not null && scope != Scope);
+
+        if (description is not null)
+        {
+            Description = description;
+        }
+
+        if (scope is not null)
+        {
+            Scope = scope;
+        }
+
+        if (workChanged)
+        {
+            ProposedComplexity = null;
+            Complexity = null;
+        }
+    }
+
     public ICollection<FeatureDependency> Dependencies { get; set; } = new List<FeatureDependency>();
     public ICollection<FeatureChangeLog> ChangeLogs { get; set; } = new List<FeatureChangeLog>();
 }

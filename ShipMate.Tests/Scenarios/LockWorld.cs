@@ -49,6 +49,7 @@ internal sealed class LockWorld
             WorkspaceId = Workspace.Id,
             Problem = "Bệnh nhân khó đặt lịch khám",
             Solution = "Đặt lịch khám online",
+            LockedPersona = new ShipMate.Domain.ValueObjects.LockedPersona { PrimaryPersona = "Bệnh nhân", Reason = "Người đặt lịch" },
             Status = ProductDefinitionStatus.ReadyForLock
         };
         Definitions = new FakeProductDefinitionRepository(Definition);
@@ -69,8 +70,9 @@ internal sealed class LockWorld
 
         Lock = new LockService(Definitions, Members, guard, mapper);
         Complexity = new FeatureComplexityService(Definitions, guard, Ai, mapper);
-        Assignment = new FeatureAssignmentService(Definitions, Assignments, Members, guard);
-        Challenge = new FeatureChallengeService(Challenges, Definitions, Members, guard, Ai, mapper);
+        Assignment = new FeatureAssignmentService(Definitions, Assignments, Members, guard,
+            Substitute.For<IGitHubOAuthService>(), Substitute.For<IGitHubConnectionRepository>(), Substitute.For<IEncryptionService>());
+        Challenge = new FeatureChallengeService(Challenges, Definitions, Assignments, Members, guard, Ai, mapper);
         DefinitionService = new ProductDefinitionService(Definitions, guard, mapper);
         Review = new FeatureReviewService(Definitions, guard, mapper);
         Analysis = new ProductDefinitionAnalysisService(
@@ -302,6 +304,8 @@ internal sealed class FakeAssignmentRepository : IFeatureAssignmentRepository
         _assignments.Add(assignment);
         return Task.FromResult(true);
     }
+
+    public Task<bool> SaveChangesAsync() => Task.FromResult(true);
 }
 
 internal sealed class FakeChallengeRepository : IFeatureChallengeRepository
@@ -330,9 +334,23 @@ internal sealed class FakeAiGateway : IAiGateway
     public Dictionary<string, int> ScoreByName { get; } = new();
     public int Calls { get; private set; }
 
+    // Answer to the persona conflict prompt; null makes the fake reply with an invalid (empty) reason.
+    public (bool Conflict, string Reason)? PersonaAnswer { get; set; } = (false, "Phù hợp");
+
     public Task<AiJsonResponse> GenerateJsonAsync(AiJsonRequest request, CancellationToken cancellationToken = default)
     {
         Calls++;
+        var root = JsonDocument.Parse(request.UserPrompt).RootElement;
+        if (root.TryGetProperty("persona", out _))
+        {
+            var answer = PersonaAnswer ?? (false, "");
+            return Task.FromResult(new AiJsonResponse
+            {
+                Model = "fake",
+                Json = JsonSerializer.Serialize(new { persona_conflict = answer.Conflict, reason = answer.Reason })
+            });
+        }
+
         var features = JsonDocument.Parse(request.UserPrompt).RootElement.GetProperty("features");
         var scores = features.EnumerateArray().Select(f =>
         {

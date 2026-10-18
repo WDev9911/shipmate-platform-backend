@@ -51,11 +51,11 @@ public class DependentsResolutionRequiredException : AppException
     public override string ErrorCode => "DEPENDENTS_RESOLUTION_REQUIRED";
     public override int StatusCode => 409;
 
-    public List<FeatureReferenceDto> AffectedDependents { get; }
+    public List<AffectedFeatureDto> AffectedDependents { get; }
 
     public override object Details => AffectedDependents;
 
-    public DependentsResolutionRequiredException(List<FeatureReferenceDto> affectedDependents)
+    public DependentsResolutionRequiredException(List<AffectedFeatureDto> affectedDependents)
         : base("Other features depend on the feature being removed. Choose to remove them too, or restructure their dependencies.")
     {
         AffectedDependents = affectedDependents;

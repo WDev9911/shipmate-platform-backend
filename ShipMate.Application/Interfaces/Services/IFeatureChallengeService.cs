@@ -22,5 +22,12 @@ public interface IFeatureChallengeService
 
     Task<FeatureChallengeDto> ApproveAsync(Guid userId, Guid workspaceId, Guid challengeId, ApproveChallengeRequest request);
 
+    /// <summary>
+    /// Before approving a Restructure onto an existing feature, checks that feature against the locked persona.
+    /// Only a warning for the Manager; the result is kept on the challenge.
+    /// </summary>
+    Task<ReplacementCheckDto> CheckReplacementAsync(
+        Guid userId, Guid workspaceId, Guid challengeId, ReplacementCheckRequest request, CancellationToken cancellationToken = default);
+
     Task<FeatureChallengeDto> RejectAsync(Guid userId, Guid workspaceId, Guid challengeId, RejectChallengeRequest request);
 }

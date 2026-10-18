@@ -9,8 +9,9 @@ Tài liệu này mô tả **phần LOCK đã cài đặt**. Nguyên văn spec LO
 ## 1. Skill Profile
 
 - Mỗi `WorkspaceMember` có `SkillLevel` (1–5, `null` nếu chưa khai báo), **gắn theo từng workspace**.
-- Thành viên tự khai và tự sửa: `PUT /api/workspaces/{id}/members/me/skill` với `{ "skillLevel": 1..5 }`. Chỉ thành viên `active` mới khai được. Manager không sửa hộ.
-- Backend chỉ trả `skillLevel = null` để frontend biết lúc nào cần hỏi (just-in-time).
+- **Khai khi vào workspace (just-in-time):** chấp nhận lời mời `POST /api/workspaces/{id}/members/accept` **bắt buộc** gửi `{ "skillLevel": 1..5 }`. Thành viên mới vì vậy không bao giờ ở trạng thái chưa khai. **Thay đổi API:** trước đây endpoint này không có body; frontend phải gửi thêm `skillLevel`.
+- Sửa lại bất cứ lúc nào: `PUT /api/workspaces/{id}/members/me/skill` với `{ "skillLevel": 1..5 }`. Chỉ thành viên `active`, chỉ sửa skill của chính mình.
+- Manager tạo workspace không qua lời mời nên khai bằng API sửa ở trên; Lock bị chặn tới khi Manager khai.
 - Giới hạn đã biết của spec: skill là tự khai báo, không có cách xác minh.
 
 ## 2. Chấm điểm complexity (bước 1)
@@ -19,6 +20,7 @@ Tài liệu này mô tả **phần LOCK đã cài đặt**. Nguyên văn spec LO
 - `POST /api/workspaces/{id}/product-definition/complexity/propose`: gọi AI chấm toàn bộ feature `included`. AI trả điểm 1–5 kèm lý do; kết quả sai (thiếu feature, điểm ngoài thang, JSON hỏng) thì bị từ chối và không lưu gì.
 - `PUT /api/workspaces/{id}/product-definition/complexity` với `{ "items": [{ "featureId", "complexity" }] }`: Manager xác nhận hoặc chỉnh điểm.
 - Chấm điểm là input của LOCK nên **không** đưa `READY_FOR_LOCK` về `Draft`.
+- **Điểm bị xóa khi nội dung đổi.** Sửa mô tả hoặc phạm vi feature ở DEFINE (sửa trực tiếp, hay qua change request của feature đã chốt) sẽ xóa cả `ProposedComplexity` lẫn `Complexity` của feature đó, để Lock không dùng điểm cũ. Chỉ đổi tên thì vẫn giữ điểm.
 - Thang điểm: 1 = một màn hình hoặc endpoint đơn giản; 5 = nhiều yếu tố khó cùng lúc. Prompt ở `Ai/Lock/Prompts/complexity-scoring.system.md`.
 
 ## 3. Kiểm tra trước khi Lock (bước 2)
@@ -49,6 +51,8 @@ Khi Lock thành công, trong một lần lưu:
 
 `GET /api/workspaces/{id}/snapshot` trả snapshot mới nhất.
 
+Nếu hai lần Lock (hoặc hai lần duyệt challenge) chạy cùng lúc và tranh nhau một số version, lần sau nhận `SNAPSHOT_VERSION_CONFLICT` (409, "tải lại rồi thử lại") thay vì lỗi 500.
+
 Snapshot không sửa tại chỗ. Ngoại lệ duy nhất theo spec: feature `backup` được nhận thì đổi sang `locked` ngay trong cùng version, và hash được tính lại.
 
 ## 5. Feature Assignment
@@ -56,7 +60,9 @@ Snapshot không sửa tại chỗ. Ngoại lệ duy nhất theo spec: feature `b
 - `GET /api/workspaces/{id}/assignments`: mỗi feature (trừ `replaced`) kèm điểm, trạng thái, người đã nhận (nếu có) và danh sách thành viên **đủ skill** (`SkillLevel ≥ Complexity`).
 - `POST /api/workspaces/{id}/assignments/{featureId}`: thành viên tự nhận. Từ chối riêng request đó (feature vẫn trống) khi: chưa khai skill (`SKILL_NOT_DECLARED`), skill thấp hơn complexity (`SKILL_TOO_LOW_FOR_FEATURE`), chưa kết nối GitHub (`GITHUB_NOT_CONNECTED`).
 - **Ai bấm trước được trước**, atomic ở tầng DB: chỉ mục unique trên `feature_id`; người đến sau nhận `FEATURE_ALREADY_ASSIGNED`.
-- Tên nhánh sinh và lưu ngay: `feature/{feature_id}-{github_username}`. **Chưa tạo nhánh thật trên GitHub** (xem "Chưa làm").
+- Tên nhánh sinh và lưu ngay: `feature/{feature_id}-{github_username}`.
+- **Tạo nhánh thật trên GitHub** nếu workspace đã liên kết repo. Nhánh được tạo từ đầu nhánh mặc định, dùng **token GitHub của chính dev nhận** (người sẽ push). Nhánh đã có sẵn thì coi như thành công.
+- GitHub từ chối (hoặc token hết hạn) thì **việc nhận vẫn giữ**, với `branchCreated = false`. Dev thử lại bằng `POST /api/workspaces/{id}/assignments/{featureId}/branch`. Chỉ người đang giữ feature mới gọi được. Chưa liên kết repo thì lỗi `WORKSPACE_REPO_NOT_LINKED`; GitHub vẫn từ chối thì lỗi `GITHUB_BRANCH_CREATION_FAILED`.
 
 ## 6. Feature Challenge (sau Lock)
 
@@ -85,6 +91,10 @@ Với `RemoveAndReplace`, nếu có feature phụ thuộc (trực tiếp hoặc 
 
 Feature `replaced` vẫn nằm trong snapshot để lưu lịch sử nhưng không tính vào budget, không nhận được, và không còn liên kết nào.
 
+**Người đang giữ feature bị bỏ.** Gợi ý (`featureToRemove`), danh sách `affectedDependents` và lỗi `DEPENDENTS_RESOLUTION_REQUIRED` đều kèm `assignedTo` (tên người đang giữ), để Manager thấy ai mất việc trước khi duyệt. Khi duyệt, mọi feature vừa thành `replaced` được **giải phóng**: assignment có `releasedAt` và người đó không còn đứng tên. Dòng assignment vẫn giữ làm lịch sử.
+
+**Kiểm tra lệch persona khi tái cấu trúc.** Trước khi duyệt `Restructure` sang một feature **có sẵn** (không phải feature mới), Manager gọi `POST .../challenges/{cid}/replacement-check` với `{ replacementFeatureId }`. AI so feature đó với `locked_persona` và trả `{ personaConflict, reason }`. Kết quả này **chỉ là cảnh báo**, không chặn việc duyệt. Lần kiểm tra gần nhất được lưu vào challenge. Feature không có trong snapshot thì lỗi `INVALID_REPLACEMENT_FEATURE`; AI trả sai thì báo lỗi và không lưu gì.
+
 ## Quyết định khi triển khai
 
 1. **Số version là số nguyên tăng dần** (1, 2, 3...), không dùng dạng `1.0 → 1.1`. Lock đầu là 1, mỗi Feature Challenge được duyệt tăng 1.
@@ -96,7 +106,7 @@ Feature `replaced` vẫn nằm trong snapshot để lưu lịch sử nhưng khô
 
 ## Chưa làm
 
-- **Persona Conflict Check** khi `Restructure` chọn feature thay thế khác (spec: so khớp với `locked_persona`). Hiện chưa có hàm dùng chung nào; cần thêm một lời gọi AI mới.
-- **Tạo nhánh thật và Branch Protection trên GitHub.** Liên kết repo đã có sẵn; còn thiếu lời gọi GitHub API tạo nhánh.
-- **Thông báo SignalR** (cho dev của feature bị bỏ và các feature phụ thuộc, và khi tìm được dev cho feature `backup`). Chưa có Hub; dùng chung với BUILD.
-- **Job quét lại feature `backup`** khi có dev mới hoặc dev sửa skill.
+- **Branch Protection "chỉ ShipMate Bot được ghi"** trên GitHub. Phần này cần một danh tính bot (GitHub App hoặc tài khoản bot) mà hiện chưa có. Nhóm cần quyết định, và nên làm chung với BUILD.
+- **Thông báo SignalR** cho dev của feature bị bỏ và của các feature phụ thuộc. Chưa có Hub; dùng chung với BUILD nên chờ thống nhất tên Hub và sự kiện.
+- **Thông báo khi có feature `backup` vừa với skill** của dev mới vào hoặc dev vừa sửa skill. Không cần job nền, vì màn hình nhận feature đã liệt kê sẵn feature backup kèm dev đủ skill. Chỉ còn thiếu phần thông báo, làm cùng SignalR.
+- **Rủi ro chấp nhận:** nếu dev nhận feature `backup` đúng lúc Manager duyệt một challenge khác, version mới có thể vẫn ghi feature đó là `backup`. Khoảng thời gian rất ngắn nên chưa xử lý.

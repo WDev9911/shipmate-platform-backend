@@ -19,6 +19,8 @@ public class FeatureAssignmentConfiguration : IEntityTypeConfiguration<FeatureAs
 
         builder.Property(a => a.AssignedUserId).HasColumnName("assigned_user_id");
         builder.Property(a => a.BranchName).HasColumnName("branch_name").HasMaxLength(300);
+        builder.Property(a => a.BranchCreatedAt).HasColumnName("branch_created_at");
+        builder.Property(a => a.ReleasedAt).HasColumnName("released_at");
         builder.Property(a => a.CreatedAt).HasColumnName("created_at");
 
         builder.HasOne(a => a.Workspace)

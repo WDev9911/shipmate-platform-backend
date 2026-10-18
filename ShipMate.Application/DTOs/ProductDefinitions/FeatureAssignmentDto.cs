@@ -13,7 +13,7 @@ public class FeatureAssignmentOverviewDto
     public List<QualifiedMemberDto> QualifiedMembers { get; set; } = new();
 }
 
-public record FeatureAssigneeDto(Guid UserId, string DisplayName, string BranchName);
+public record FeatureAssigneeDto(Guid UserId, string DisplayName, string BranchName, bool BranchCreated);
 
 public record QualifiedMemberDto(Guid UserId, string DisplayName, int SkillLevel);
 
@@ -22,4 +22,7 @@ public class FeatureAssignmentDto
     public Guid FeatureId { get; set; }
     public Guid AssignedUserId { get; set; }
     public string BranchName { get; set; } = string.Empty;
+
+    // False when the workspace has no linked repository or GitHub refused; the claim still stands and can be retried.
+    public bool BranchCreated { get; set; }
 }

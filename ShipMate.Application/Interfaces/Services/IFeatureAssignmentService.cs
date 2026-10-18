@@ -9,4 +9,7 @@ public interface IFeatureAssignmentService
 
     /// <summary>First come, first served: the first developer to claim a feature gets it.</summary>
     Task<FeatureAssignmentDto> ClaimAsync(Guid userId, Guid workspaceId, Guid featureId);
+
+    /// <summary>The developer holding the feature retries creating its branch on GitHub.</summary>
+    Task<FeatureAssignmentDto> RetryBranchAsync(Guid userId, Guid workspaceId, Guid featureId);
 }

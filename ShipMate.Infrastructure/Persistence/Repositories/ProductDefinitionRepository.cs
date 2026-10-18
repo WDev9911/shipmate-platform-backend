@@ -62,5 +62,5 @@ public class ProductDefinitionRepository : IProductDefinitionRepository
             .ToListAsync();
 
     public async Task<bool> SaveChangesAsync() =>
-        await _context.SaveChangesAsync() > 0;
+        await UniqueViolation.SaveGuardingSnapshotVersionAsync(_context);
 }

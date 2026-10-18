@@ -97,9 +97,9 @@ public class WorkspacesController : ControllerBase
     }
 
     [HttpPost("{id:guid}/members/accept")]
-    public async Task<IActionResult> AcceptInvitation(Guid id)
+    public async Task<IActionResult> AcceptInvitation(Guid id, AcceptInvitationRequest request)
     {
-        var result = await _workspaceService.AcceptInvitationAsync(_currentUserService.UserId!.Value, id);
+        var result = await _workspaceService.AcceptInvitationAsync(_currentUserService.UserId!.Value, id, request);
         return Ok(result);
     }
 

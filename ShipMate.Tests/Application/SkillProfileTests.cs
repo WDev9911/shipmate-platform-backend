@@ -79,6 +79,36 @@ public class SkillProfileTests
         await _workspaces.DidNotReceive().SaveChangesAsync();
     }
 
+    // ---- skill declared when joining (accepting the invitation) ----
+
+    [Fact]
+    public async Task AcceptInvitation_ActivatesTheMemberWithTheDeclaredSkill()
+    {
+        var member = GivenMember(WorkspaceMemberStatus.Invited);
+
+        await _service.AcceptInvitationAsync(_userId, _workspaceId, new AcceptInvitationRequest { SkillLevel = 4 });
+
+        Assert.Equal(WorkspaceMemberStatus.Active, member.Status);
+        Assert.Equal(4, member.SkillLevel);
+    }
+
+    [Fact]
+    public async Task AcceptInvitation_WithoutAPendingInvitation_IsNotFound()
+    {
+        GivenMember(WorkspaceMemberStatus.Active);
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            _service.AcceptInvitationAsync(_userId, _workspaceId, new AcceptInvitationRequest { SkillLevel = 3 }));
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(5, true)]
+    [InlineData(6, false)]
+    public void AcceptInvitationValidator_RequiresASkillFromOneToFive(int level, bool valid) =>
+        Assert.Equal(valid, new AcceptInvitationRequestValidator().Validate(new AcceptInvitationRequest { SkillLevel = level }).IsValid);
+
     [Theory]
     [InlineData(1, true)]
     [InlineData(5, true)]

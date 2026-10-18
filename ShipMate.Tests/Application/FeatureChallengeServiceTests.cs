@@ -18,6 +18,7 @@ public class FeatureChallengeServiceTests
     private readonly IFeatureChallengeRepository _challenges = Substitute.For<IFeatureChallengeRepository>();
     private readonly IProductDefinitionRepository _definitions = Substitute.For<IProductDefinitionRepository>();
     private readonly IWorkspaceMemberRepository _members = Substitute.For<IWorkspaceMemberRepository>();
+    private readonly IFeatureAssignmentRepository _assignments = Substitute.For<IFeatureAssignmentRepository>();
     private readonly IWorkspaceAccessGuard _guard = Substitute.For<IWorkspaceAccessGuard>();
     private readonly IAiGateway _ai = Substitute.For<IAiGateway>();
     private readonly FeatureChallengeService _service;
@@ -48,13 +49,14 @@ public class FeatureChallengeServiceTests
             };
         });
 
-        _service = new FeatureChallengeService(_challenges, _definitions, _members, _guard, _ai, mapper);
+        _service = new FeatureChallengeService(_challenges, _definitions, _assignments, _members, _guard, _ai, mapper);
 
         _snapshot = new MvpSnapshot { WorkspaceId = _workspaceId, Version = 1, DevCountAtLock = 1 };
         _snapshot.Features.Add(_a);
         _snapshot.Features.Add(_b);
         _snapshot.Features.Add(_committed);
         _definitions.GetLatestSnapshotAsync(_workspaceId).Returns(_snapshot);
+        _assignments.GetByWorkspaceIdAsync(_workspaceId).Returns(new List<FeatureAssignment>());
         _definitions.GetByWorkspaceIdAsync(_workspaceId).Returns(new ProductDefinition { Problem = "p", Solution = "s" });
 
         GivenMembers(Member(_manager, WorkspaceMemberRole.Manager, skill: 5));

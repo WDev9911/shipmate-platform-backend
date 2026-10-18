@@ -52,6 +52,15 @@ public class FeatureChallengeController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPost("{challengeId:guid}/replacement-check")]
+    public async Task<IActionResult> CheckReplacement(
+        Guid workspaceId, Guid challengeId, ReplacementCheckRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _featureChallengeService.CheckReplacementAsync(
+            _currentUserService.UserId!.Value, workspaceId, challengeId, request, cancellationToken);
+        return Ok(result);
+    }
+
     [HttpPost("{challengeId:guid}/approve")]
     public async Task<IActionResult> Approve(Guid workspaceId, Guid challengeId, ApproveChallengeRequest request)
     {
