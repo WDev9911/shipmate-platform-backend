@@ -43,6 +43,14 @@ public class ProductDefinitionController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPut("constraints")]
+    public async Task<IActionResult> UpdateConstraints(Guid workspaceId, UpdateProjectConstraintsRequest request)
+    {
+        var result = await _productDefinitionService.UpdateConstraintsAsync(
+            _currentUserService.UserId!.Value, workspaceId, request);
+        return Ok(result);
+    }
+
     [HttpGet("report")]
     public async Task<IActionResult> GetReport(Guid workspaceId)
     {

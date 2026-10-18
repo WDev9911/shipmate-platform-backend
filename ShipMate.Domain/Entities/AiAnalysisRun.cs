@@ -11,6 +11,8 @@ public class AiAnalysisRun : BaseEntity
     public User RunBy { get; set; } = null!;
 
     public string VisionPromptSnapshot { get; set; } = string.Empty;
+    // JSON of the constraints the AI was given; null when there were none.
+    public string? ConstraintsSnapshot { get; set; }
     public string Model { get; set; } = string.Empty;
 
     public bool Succeeded { get; set; }

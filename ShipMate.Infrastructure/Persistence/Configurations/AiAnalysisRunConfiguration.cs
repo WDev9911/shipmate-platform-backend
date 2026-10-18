@@ -20,6 +20,7 @@ public class AiAnalysisRunConfiguration : IEntityTypeConfiguration<AiAnalysisRun
         builder.Property(r => r.RunByUserId).HasColumnName("run_by_user_id");
 
         builder.Property(r => r.VisionPromptSnapshot).HasColumnName("vision_prompt_snapshot").HasColumnType("text").IsRequired();
+        builder.Property(r => r.ConstraintsSnapshot).HasColumnName("constraints_snapshot").HasColumnType("text");
         builder.Property(r => r.Model).HasColumnName("model").HasMaxLength(AiAnalysisRunConstraints.ModelMaxLength).IsRequired();
         builder.Property(r => r.Succeeded).HasColumnName("succeeded");
         builder.Property(r => r.RawResponse).HasColumnName("raw_response").HasColumnType("text");

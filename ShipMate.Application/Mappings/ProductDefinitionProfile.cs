@@ -13,6 +13,7 @@ public class ProductDefinitionProfile : Profile
             .ForMember(dest => dest.Features, opt => opt.MapFrom(src => src.Features.OrderBy(f => f.Position)));
 
         CreateMap<LockedPersona, LockedPersonaDto>();
+        CreateMap<ProjectConstraints, ProjectConstraintsDto>();
         CreateMap<SupportingRole, SupportingRoleDto>();
 
         CreateMap<Feature, FeatureDto>()

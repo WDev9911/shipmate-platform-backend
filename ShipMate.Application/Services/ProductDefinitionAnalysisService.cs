@@ -75,6 +75,7 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
                     Description = f.Description
                 })
                 .ToList(),
+            Constraints = productDefinition.Constraints,
             ExistingFeatures = isReanalysis ? features.Select(ToExistingFeatureInput).ToList() : [],
             CurrentPersona = isReanalysis ? ToPersonaInput(productDefinition.LockedPersona) : null,
             Instruction = request?.Instruction,
@@ -86,6 +87,9 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
             ProductDefinitionId = productDefinition.Id,
             RunByUserId = userId,
             VisionPromptSnapshot = workspace.VisionPrompt,
+            ConstraintsSnapshot = productDefinition.Constraints is null
+                ? null
+                : JsonSerializer.Serialize(productDefinition.Constraints, AiJson.Options),
             Model = _aiGateway.Model
         };
         await _productDefinitionRepository.AddAnalysisRunAsync(run);

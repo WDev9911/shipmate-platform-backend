@@ -9,6 +9,7 @@ public class ProductDefinitionDto
     public Guid WorkspaceId { get; set; }
     public ProductDefinitionStatus Status { get; set; }
     public LockedPersonaDto? LockedPersona { get; set; }
+    public ProjectConstraintsDto? Constraints { get; set; }
     public string? Problem { get; set; }
     public string? Solution { get; set; }
     public List<FeatureDto> Features { get; set; } = new();

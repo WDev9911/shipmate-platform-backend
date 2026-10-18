@@ -14,6 +14,8 @@ Dev nhập "Product Vision Prompt" (text tự do, bắt buộc) — mô tả ý 
 
 Ngoài ra, nếu có, Dev có thể nhập thêm "Feature đã chốt với khách" (danh sách có cấu trúc riêng, tên feature + mô tả ngắn) — chỉ áp dụng khi Dev và khách hàng đã thống nhất trước 1 số feature ngoài phạm vi hệ thống. Nếu không có, bỏ qua phần này, luồng vẫn chạy bình thường chỉ với Vision Prompt.
 
+**Ràng buộc dự án (tùy chọn).** Dev có thể nhập thêm "Ràng buộc" gồm tối đa 3 phần, mỗi phần là text tự do: quy định của khách hàng, handbook của công ty, quy định của team / dự án. Phần nào không có thì bỏ trống; bỏ trống cả 3 thì luồng chạy y như không có tính năng này. Ràng buộc chỉ là thông tin AI đọc thêm: AI dùng khi viết mô tả/phạm vi và khi đánh giá `ai_assessment`, nếu feature vướng ràng buộc thì ghi vào lý do. Ràng buộc **không** tạo cờ mới, không đổi `origin`/`status`, không ảnh hưởng điều kiện `READY_FOR_LOCK`. Sửa ràng buộc được tính là thay đổi Product Definition (đang `READY_FOR_LOCK` thì quay về `Draft`).
+
 ### Bước 2 — AI phân tích
 
 Hệ thống gửi Vision Prompt cho AI (AI Ideation & Feature Extractor), kèm danh sách "Feature đã chốt với khách" nếu Dev có nhập. AI làm 4 việc theo đúng thứ tự, chỉ áp dụng cho phần Vision Prompt tự do:
@@ -115,7 +117,7 @@ Sau lần LOCK đầu tiên thành công, Product Definition bị **đóng băng
 ## Điểm kỹ thuật cần lưu ý
 
 - AI phải trả structured output (JSON). Tách 2 schema:
-    - **Input:** `visionPrompt` (bắt buộc), `committedFeatures[]` (optional). **[CẬP NHẬT]** Khi chạy lại (Bước 5b) gửi thêm `existingFeatures[]` và `currentPersona` để AI biết phần nào phải giữ.
+    - **Input:** `visionPrompt` (bắt buộc), `committedFeatures[]` (optional), `constraints` (optional: `customer`, `company`, `team`; lược khỏi JSON khi không có). Mỗi lần gọi AI lưu thêm snapshot constraints vào `AiAnalysisRun`. **[CẬP NHẬT]** Khi chạy lại (Bước 5b) gửi thêm `existingFeatures[]` và `currentPersona` để AI biết phần nào phải giữ.
     - **Output:** `persona`, `features[]`. Mỗi item trong `features[]` có `id`, `name`, `description`, `scope`, `role` (`primary` | `supporting`), `origin`, `sources[]`, `ai_assessment` (`verdict`, `reason`), `status`, `possible_duplicate`, `duplicate_of`, `persona_conflict`, `depends_on: []` (danh sách feature_id tiền đề).
     - **Không có mảng `killList[]` riêng.** Kill List được lọc ra từ `features[]` theo `status`, để feature được cứu lại luôn còn đủ thông tin.
 - **[CẬP NHẬT]** Mỗi feature lưu thêm field hệ thống `dev_decided` (bool). Field này không do AI trả về.

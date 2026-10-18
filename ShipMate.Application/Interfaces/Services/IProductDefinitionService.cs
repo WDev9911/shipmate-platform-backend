@@ -11,6 +11,8 @@ public interface IProductDefinitionService
     /// <summary>Moves the product definition to READY_FOR_LOCK once every DEFINE step 7 condition holds.</summary>
     Task<ProductDefinitionDto> MarkReadyForLockAsync(Guid userId, Guid workspaceId);
 
+    Task<ProductDefinitionDto> UpdateConstraintsAsync(Guid userId, Guid workspaceId, UpdateProjectConstraintsRequest request);
+
     Task<ProductDefinitionReportDto> GetReportAsync(Guid userId, Guid workspaceId);
 
     Task<FeatureDto> AddCommittedFeatureAsync(Guid userId, Guid workspaceId, CreateCommittedFeatureRequest request);

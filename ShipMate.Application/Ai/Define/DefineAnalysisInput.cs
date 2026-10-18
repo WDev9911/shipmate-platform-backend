@@ -1,4 +1,6 @@
+using System.Text.Json.Serialization;
 using ShipMate.Domain.Enums;
+using ShipMate.Domain.ValueObjects;
 
 namespace ShipMate.Application.Ai.Define;
 
@@ -7,6 +9,10 @@ public class DefineAnalysisInput
 {
     public string VisionPrompt { get; set; } = string.Empty;
     public List<DefineCommittedFeatureInput> CommittedFeatures { get; set; } = new();
+
+    // Omitted from the JSON when the developer gave none, so the AI input is unchanged in that case.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ProjectConstraints? Constraints { get; set; }
 
     // Re-analysis only (DEFINE step 5b); empty / null on the first analysis.
     public List<DefineExistingFeatureInput> ExistingFeatures { get; set; } = new();
