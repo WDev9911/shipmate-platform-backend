@@ -7,6 +7,13 @@ namespace ShipMate.API.Middlewares;
 
 public class GlobalExceptionHandler : IExceptionHandler
 {
+    // Shared with the invalid-JSON response in Program.cs, so every 400 for bad input looks the same.
+    public const string ValidationFailedCode = "VALIDATION_FAILED";
+    public const string ValidationTitle = "Invalid data";
+    public const string ValidationDetail = "One or more fields are invalid.";
+
+    private const string NotFoundCode = "NOT_FOUND";
+
     private readonly IProblemDetailsService _problemDetailsService;
     private readonly ILogger<GlobalExceptionHandler> _logger;
 
@@ -30,8 +37,14 @@ public class GlobalExceptionHandler : IExceptionHandler
             Instance = httpContext.Request.Path
         };
 
+        if (exception is NotFoundException)
+        {
+            problemDetails.Extensions["errorCode"] = NotFoundCode;
+        }
+
         if (exception is ValidationException validationException)
         {
+            problemDetails.Extensions["errorCode"] = ValidationFailedCode;
             problemDetails.Extensions["errors"] = validationException.Errors
                 .GroupBy(e => e.PropertyName)
                 .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray());
@@ -65,7 +78,8 @@ public class GlobalExceptionHandler : IExceptionHandler
     {
         NotFoundException e => (StatusCodes.Status404NotFound, "Resource not found", e.Message),
         AppException e => (e.StatusCode, "Bad request", e.Message),
-        ValidationException e => (StatusCodes.Status400BadRequest, "Invalid data", e.Message),
+        // Per-field messages are in "errors"; e.Message repeats them in one hard-to-read string.
+        ValidationException => (StatusCodes.Status400BadRequest, ValidationTitle, ValidationDetail),
         _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred",
               "Something went wrong on our end. Please try again later.")
     };
