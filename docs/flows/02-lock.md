@@ -21,8 +21,11 @@ Tài liệu này mô tả **phần LOCK đã cài đặt**. Nguyên văn spec LO
 | Branch Protection, SignalR, thông báo feature backup | Chưa làm | Chưa làm |
 
 - Migration đã chạy vào DB dev: `AddLockFlow`, `LockFixesAndPersonaCheck`.
-- Unit test: 293/293 đạt. Chi tiết kịch bản ở `docs/lock-test-report.md`.
-- Code nằm trên nhánh `feature/lock` (commit `1bd3d02` và `f4b5b0f`), chưa merge vào `main`.
+- Unit test: 359/359 đạt (gồm cả test mới cho phân tích AI của DEFINE và Auth). Chi tiết kịch bản ở `docs/lock-test-report.md` và `docs/unit-test-report.md`.
+- Đã kiểm tra tranh chấp đồng thời trên PostgreSQL thật: nhận cùng feature (FCFS) và Lock cùng lúc (`SNAPSHOT_VERSION_CONFLICT`). Xem `docs/lock-test-report.md` mục 7.6.
+- Đã chạy thử trên DB thật qua HTTP (2026-10-19): DEFINE → LOCK → Feature Challenge, và luồng team (mời dev, nhận lời mời kèm skill). Mọi bước đúng như thiết kế. Xem `docs/lock-test-report.md` mục 7.
+- Định dạng lỗi thống nhất cho toàn API: mọi lỗi có `errorCode` (`NOT_FOUND`, `VALIDATION_FAILED` hoặc mã riêng). Body JSON sai kiểu cũng trả `VALIDATION_FAILED`. Xem `CONTRIBUTING.md` mục 9.
+- Code nằm trên nhánh `feature/lock` (commit `1bd3d02`, `f4b5b0f`, `1c033a5`, `1482064`), đã push lên GitHub nhưng chưa có PR và chưa merge vào `main`. Nhánh này tạo từ `feature/define-constraints`, nên nên merge PR #14 trước.
 
 ## 1. Skill Profile
 

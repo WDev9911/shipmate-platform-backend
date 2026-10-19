@@ -1,6 +1,6 @@
 # Báo cáo Unit Test — luồng DEFINE
 
-**Kết quả: 117 test, 117 pass, 0 fail.** Chạy bằng `dotnet test ShipMate.Tests`. Không dùng DB, không gọi AI (repository được giả lập bằng NSubstitute).
+**Kết quả: 183 test, 183 pass, 0 fail** (117 test DEFINE ban đầu, 30 test phân tích AI của DEFINE ở mục 10–11, 36 test Auth ở mục 12; cập nhật 2026-10-19). Chạy bằng `dotnet test ShipMate.Tests`. Không dùng DB, không gọi AI thật: repository được giả lập bằng NSubstitute hoặc lưu trong bộ nhớ, AI được thay bằng câu trả lời soạn sẵn. Cả project hiện có 359 test (gồm cả LOCK, xem `docs/lock-test-report.md`).
 
 **Ký hiệu:** `AI` = from_ai, `MEN` = from_customer_mentioned, `COM` = from_committed_list. `Inc` = included, `Exc` = excluded, `Pen` = pending_confirmation. "Dev" = Manager của workspace. Lỗi được viết theo tên exception; "không lưu" nghĩa là `SaveChanges` không được gọi.
 
@@ -233,7 +233,90 @@ File: `Application/ValidatorTests.cs`
 
 ---
 
+## 10. Kiểm tra output của AI trước khi lưu (16 test)
+File: `Application/DefineAnalysisOutputValidatorTests.cs`
+
+Quyết định M3 số 4: output vi phạm luật thì hủy cả lần chạy. Mỗi test đưa vào một output sai đúng một luật.
+
+| # | Input | Kết quả mong đợi |
+|---|---|---|
+| 1 | output đúng: feature đã chốt cần 1 feature `supporting` mới | không lỗi |
+| 2 | persona chính rỗng | lỗi persona |
+| 3 | 2 feature trùng id | lỗi id dùng 2 lần |
+| 4–5 | tên rỗng; tên dài 201 ký tự | lỗi tên |
+| 6 | feature AI tự nhận `from_committed_list` | lỗi origin |
+| 7 | feature đã chốt bị AI trả về với origin khác | lỗi origin |
+| 8 | thiếu feature đã chốt | lỗi thiếu feature đã chốt |
+| 9 | phụ thuộc vào id không tồn tại | lỗi feature không tồn tại |
+| 10 | phụ thuộc vào feature giữ nguyên mà AI không trả về | hợp lệ (M8 số 18) |
+| 11 | feature phụ thuộc chính nó | lỗi tự phụ thuộc |
+| 12–13 | cờ trùng lặp mà `duplicate_of` rỗng; hoặc trỏ tới feature không phải đã chốt | lỗi `duplicate_of` |
+| 14 | cờ trùng lặp trỏ đúng feature đã chốt | hợp lệ |
+| 15 | feature `supporting` mới không feature `primary` nào cần | lỗi (Bước 2.2) |
+| 16 | feature `supporting` giữ nguyên không feature `primary` nào cần | hợp lệ (M3 số 3) |
+
+## 11. Phân tích và chạy lại AI (14 test)
+File: `Application/ProductDefinitionAnalysisServiceTests.cs`
+
+AI giả trả JSON soạn sẵn. Repository lưu trong bộ nhớ, ghi lại feature và liên kết được thêm/xóa để kiểm tra đúng cái gì thay đổi.
+
+| # | Input | Kết quả mong đợi |
+|---|---|---|
+| 1 | lần đầu: 1 feature COM, AI trả thêm 1 MEN `supporting`, 1 AI `required`, 1 AI `not_required` | COM giữ tên và trạng thái, nhận `role` và cờ lệch persona. Feature mới: MEN → Pen, AI required → Inc, AI not_required → Exc, `sources = [origin]`. Id của AI được đổi thành id thật cho liên kết. Lưu persona, problem/solution và lần chạy (thành công, model, Vision Prompt, raw response) |
+| 2 | lần đầu: AI gắn cờ trùng lặp với feature COM | `DuplicateOfId` trỏ đúng feature COM |
+| 3 | lần đầu | input gửi AI có feature đã chốt, **không** có `existing_features` và `current_persona` |
+| 4 | AI trả JSON hỏng | `AiOutputInvalidException`. Chỉ lưu lần chạy thất bại (lý do, raw response). Không feature, persona hay `role` nào thay đổi |
+| 5 | AI trả output vi phạm luật `supporting` | như trên, lý do ghi trên lần chạy |
+| 6 | AI bị giới hạn lượt gọi | lần chạy thất bại ghi `AI_RATE_LIMITED`, lỗi được ném tiếp |
+| 7 | chạy lại có `instruction` và `reassessPersona` | input gửi AI có `existing_features` (kèm `can_regenerate`), `current_persona`, `instruction`, `reassess_persona` (M8 số 17) |
+| 8 | chạy lại: 2 feature AI chưa ai đụng, AI chỉ trả 1 | feature được trả về sửa tại chỗ (cùng id); feature còn lại bị bỏ |
+| 9 | chạy lại: feature MEN phụ thuộc 1 feature AI bị bỏ | liên kết bị xóa và báo trong `removedDependencies` (M8 số 21) |
+| 10 | chạy lại: feature `dev_decided`, AI đổi tên, role, verdict | chỉ `ai_assessment` đổi; tên, trạng thái, role giữ nguyên |
+| 11 | chạy lại: feature COM `dev_decided` nhưng AI chưa từng đánh giá | vẫn nhận `role` và cờ lệch persona (M8 số 19) |
+| 12 | chạy lại: AI bỏ sót feature MEN | feature vẫn còn (M8 số 18) |
+| 13 | chạy lại: liên kết giữa 2 feature giữ nguyên; AI bỏ liên kết đó và đề xuất liên kết ngược | giữ nguyên liên kết của Dev, không thêm/xóa liên kết nào (M8 số 20) |
+| 14 | chạy lại khi đang READY_FOR_LOCK | về Draft (M7 số 13) |
+
+## 12. Auth (36 test)
+File: `Application/AuthServiceTests.cs`
+
+Mã OTP được lấy từ nội dung email giả, rồi so với hash đã lưu, để chắc chắn mã gửi cho người dùng đúng là mã hệ thống kiểm tra.
+
+| # | Input | Kết quả mong đợi |
+|---|---|---|
+| 1 | đăng ký email mới | user `developer`, chưa xác thực, mật khẩu đã hash. Mã OTP trong email khớp hash đã lưu, hết hạn sau 15 phút |
+| 2 | đăng ký email đã có | `EmailAlreadyExistsException`, không tạo user, không gửi email |
+| 3 | xác thực đúng mã | user được xác thực, mã bị đánh dấu đã dùng, đăng nhập luôn (refresh token lưu dạng hash) |
+| 4–7 | xác thực sai mã; mã hết hạn; mã đã dùng; email không tồn tại | `InvalidOrExpiredTokenException`, user vẫn chưa xác thực |
+| 8 | gửi lại mã cho user chưa xác thực | vô hiệu mã cũ, gửi mã mới khớp hash |
+| 9–10 | gửi lại mã cho email không tồn tại hoặc đã xác thực | không làm gì, không báo lỗi (không lộ tài khoản) |
+| 11 | đăng nhập đúng | cấp token, ghi thiết bị |
+| 12 | sai mật khẩu và email không tồn tại | cùng một lỗi `InvalidCredentialsException` |
+| 13 | tài khoản chỉ có GitHub, không mật khẩu | `InvalidCredentialsException` |
+| 14 | tài khoản bị khóa | `AccountLockedException` |
+| 15 | email chưa xác thực | `EmailNotVerifiedException` |
+| 16 | refresh token hợp lệ | xoay vòng: token cũ bị thu hồi, trỏ tới token mới, giữ thiết bị |
+| 17 | refresh token hết hạn hoặc không tồn tại | `InvalidOrExpiredTokenException` |
+| 18 | dùng lại refresh token đã thu hồi | thu hồi mọi phiên của user (dấu hiệu bị đánh cắp) |
+| 19 | đăng xuất 2 lần, đăng xuất token lạ | thu hồi đúng 1 lần, không báo lỗi |
+| 20–21 | quên mật khẩu với email không tồn tại hoặc tài khoản chỉ có GitHub | không làm gì, không báo lỗi |
+| 22 | quên mật khẩu đúng | gửi mã khớp hash đã lưu |
+| 23 | nhập đúng mã reset | trả ticket, đánh dấu đã xác minh nhưng chưa dùng mã |
+| 24 | nhập sai mã reset | `InvalidOrExpiredTokenException` |
+| 25 | đặt lại mật khẩu bằng ticket đã xác minh | đổi mật khẩu, mã bị dùng, thu hồi mọi phiên |
+| 26–28 | ticket chưa xác minh; đã dùng; hết hạn | `InvalidOrExpiredTokenException`, mật khẩu không đổi |
+| 29 | đăng nhập GitHub với email mới | tạo tài khoản đã xác thực, không mật khẩu; lưu token GitHub đã mã hóa |
+| 30 | đăng nhập GitHub, email trùng tài khoản đã xác thực | liên kết vào tài khoản đó, gửi email cảnh báo |
+| 31 | đăng nhập GitHub, email trùng tài khoản chưa xác thực | `EmailNotVerifiedCannotLinkException`, không liên kết |
+| 32 | GitHub không trả email | `GitHubEmailUnavailableException` |
+| 33 | kết nối GitHub đã thuộc người khác | `GitHubAccountAlreadyLinkedException` |
+| 34 | ngắt GitHub khi tài khoản không có mật khẩu | `GitHubDisconnectRequiresPasswordException` |
+| 35 | ngắt GitHub khi đang là Manager của workspace có repo liên kết | `GitHubDisconnectBlockedByLinkedWorkspacesException` |
+| 36 | ngắt GitHub hợp lệ | xóa liên kết và token đã lưu |
+
+---
+
 ## Chưa được test
-- Phần gọi AI (`ProductDefinitionAnalysisService`, AI Gateway), theo yêu cầu.
-- Auth (đăng nhập sai mật khẩu, OTP...) và Workspace, vì không thuộc luồng DEFINE.
-- Controller, truy vấn DB thật, và middleware chuyển exception thành JSON trả về client.
+- **AI Gateway** (lớp gọi provider thật) và **chất lượng output của AI thật**. Phân tích DEFINE chỉ chạy AI thật vài lần khi test trên DB (xem `docs/lock-test-report.md` mục 7).
+- **Workspace service** ngoài phần skill và lời mời: tạo/sửa/lưu trữ workspace, đổi role, xóa thành viên, liên kết repo GitHub.
+- **Controller, DB thật và middleware lỗi** chưa có test tự động. Đã kiểm tra bằng tay qua HTTP trên DB dev (`docs/lock-test-report.md` mục 7).

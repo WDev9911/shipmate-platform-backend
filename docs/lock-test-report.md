@@ -2,7 +2,7 @@
 
 - **Ngày chạy:** 2026-10-19
 - **Lệnh:** `dotnet test ShipMate.Tests`
-- **Kết quả:** **293 / 293 đạt**, 0 lỗi, 0 bỏ qua, chạy trong khoảng 0,13 giây.
+- **Kết quả:** **359 / 359 đạt**, 0 lỗi, 0 bỏ qua.
 - **Không gọi AI thật.** AI được giả (`FakeAiGateway`) trả điểm cố định theo tên feature và trả kết quả kiểm tra persona do test đặt sẵn, nên không tốn token.
 - **Không gọi GitHub thật.** Việc tạo nhánh được giả bằng NSubstitute.
 - **Không dùng DB thật.** Service thật chạy trên repository giả lưu trong bộ nhớ (`LockWorld`), giữ trạng thái giữa các bước nên một test đi được qua nhiều bước như người dùng thật.
@@ -25,7 +25,10 @@
 | Application.SkillProfileTests | 15 | 15 | Khai báo skill, khai skill khi nhận lời mời |
 | Application.LockedDefinitionTests | 11 | 11 | DEFINE đóng băng sau Lock |
 | Nhóm DEFINE (có từ trước) | 117 | 117 | FeatureReview, ProductDefinition, validators, policy... |
-| **Tổng** | **293** | **293** | |
+| Application.DefineAnalysisOutputValidatorTests | 16 | 16 | Luật hủy output AI sai của DEFINE (xem `unit-test-report.md` mục 10) |
+| Application.ProductDefinitionAnalysisServiceTests | 14 | 14 | Phân tích và chạy lại AI của DEFINE, AI giả (mục 11) |
+| Application.AuthServiceTests | 36 | 36 | Đăng ký, OTP, đăng nhập, refresh token, đặt lại mật khẩu, GitHub (mục 12) |
+| **Tổng** | **359** | **359** | |
 
 ## 2. Câu chuyện dùng chung
 
@@ -90,10 +93,130 @@ Snapshot v1: Đăng nhập 1, Bác sĩ tạo lịch 3, Xem lịch 2 (cần tạo
 | N1 Tái cấu trúc sang feature lệch persona | AI kiểm tra, chỉ cảnh báo | C12, C13 |
 | N2a Chưa tạo nhánh GitHub thật | Tạo nhánh bằng token của dev nhận, có API thử lại | `FeatureAssignmentTests` |
 
-## 7. Những gì chưa test
+## 7. Chạy thử trên DB thật (2026-10-19)
 
-- **Không gọi AI thật.** Chất lượng điểm AI chấm, kết quả kiểm tra persona và phần prompt chưa được kiểm chứng. Chỉ test cách hệ thống xử lý kết quả AI (hợp lệ, sai thang, thiếu feature, JSON hỏng).
-- **Không có DB thật.** Chỉ mục unique chống hai người nhận cùng feature (FCFS) và chống tranh version snapshot được giả lập; hành vi thật của PostgreSQL chưa được kiểm tra tự động.
-- **Không gọi GitHub thật.** Chưa thử tạo nhánh trên một repo thật.
-- **Chưa test HTTP/controller.** Hai migration đã chạy vào DB dev.
+Unit test không chạm tới controller, validator, middleware, EF Core và PostgreSQL. Phần này gọi API thật (`http://localhost:5140`) trên DB dev để kiểm tra những lớp đó.
+
+- **Workspace:** tạo mới "LOCK test - Nha Khoa" (`ad75067c-c7da-49ed-a621-3c3e17aaa614`), để workspace demo "Phòng khám Nha Khoa - Đặt lịch" vẫn dùng được cho demo DEFINE (Lock khóa vĩnh viễn DEFINE).
+- **Dữ liệu vào:** cùng Vision Prompt và 2 feature đã chốt với bản demo (`define-demo-data.md`), để so được kết quả AI.
+- **Tài khoản:** `freelancer.demo` (Manager) và "Dev Test" (Developer, tạo để test luồng team). Mật khẩu ghi trong `define-demo-data.md`, không đưa lên git.
+- **AI thật gọi 3 lần:** phân tích DEFINE, đề xuất điểm cho challenge, kiểm tra persona. Điểm feature lúc Lock do Manager chấm tay để tiết kiệm token.
+- **GitHub:** chỉ test lỗi `GITHUB_NOT_CONNECTED`, không tạo nhánh thật.
+- **Cách đánh giá:** mỗi luật được thử cả hai chiều: làm sai thì phải bị chặn đúng mã lỗi, làm đúng thì phải qua.
+
+### 7.1. DEFINE
+
+| Bước | Kết quả |
+|---|---|
+| Tạo workspace, thêm 2 feature đã chốt | 201 |
+| Chuyển READY trước khi chạy AI | 409, chặn |
+| AI phân tích | 200. Persona "Bệnh nhân", vai trò phụ "Bác sĩ", "Chủ phòng khám" (lần 17/10 chỉ có Bác sĩ, AI không ổn định giữa các lần chạy). 7 feature, tất cả `pending_confirmation` |
+| EXCLUDE thẳng feature đã chốt / sửa tay feature đã chốt | 409, phải qua change request |
+| EXCLUDE feature đang có feature included phụ thuộc | 409, yêu cầu chọn cách xử lý |
+| READY khi còn feature pending | 409 |
+| INCLUDE 3, EXCLUDE 4, sửa tên feature khách nhắc | 200 |
+| READY_FOR_LOCK | 200, `ReadyForLock` |
+
+### 7.2. LOCK
+
+| Bước | Kết quả |
+|---|---|
+| Kiểm tra khi chưa khai skill, chưa chấm điểm | Báo 1 thành viên thiếu skill, 3 feature thiếu điểm, budget 10. Lock bị chặn (409) |
+| Khai skill 6 / skill 4 | 400 / 200 |
+| Chấm tay 3, 3, 2 (tổng 8) | 200, vẫn `ReadyForLock` |
+| Lock | 201. Snapshot v1: 3 feature `locked`, 1 dependency, `devCountAtLock = 1`, hash 64 ký tự. `firstLockedAt` có giá trị, Product Definition `locked` |
+| Lock lần 2, sửa feature, đổi trạng thái, chạy lại AI, sửa Vision Prompt, chấm điểm lại | Tất cả 409 `PRODUCT_DEFINITION_LOCKED`. Chạy lại AI bị chặn trước khi gọi AI. Đọc dữ liệu vẫn 200. `firstLockedAt` không đổi |
+| Nhận feature khi chưa kết nối GitHub | 400 `GITHUB_NOT_CONNECTED` |
+
+### 7.3. Feature Challenge
+
+Kịch bản: thay "Quản lý lịch làm việc bác sĩ" (nhập tay) bằng "Đồng bộ lịch bác sĩ từ Google Calendar". Chọn kịch bản này vì nó đi qua nhánh khó nhất: vượt budget, bỏ feature có feature khác phụ thuộc, tái cấu trúc và kiểm tra persona.
+
+| Bước | Kết quả |
+|---|---|
+| Gửi challenge | 201, AI đề xuất điểm 4 |
+| Duyệt khi chưa xác nhận điểm | 409 |
+| Xác nhận điểm 4 (8 + 4 = 12 > 10) | Gợi ý `RemoveAndReplace`, bỏ "Quản lý lịch làm việc bác sĩ" (điểm 2, không đụng feature đã chốt), cảnh báo ảnh hưởng tới "Đặt lịch khám online" |
+| Duyệt `AddDirectly` khi vượt budget | 409, cổng kiểm tra chạy lại |
+| Duyệt thay thế khi chưa chọn cách xử lý feature phụ thuộc | 409 |
+| Kiểm tra persona với feature không có trong snapshot / với "Quản lý hồ sơ bệnh án" | 409 / 200, `personaConflict = false` kèm lý do, lưu vào challenge |
+| Duyệt `RemoveAndReplace` + `Restructure` | 200. Snapshot v2 (hash khác v1): feature bị bỏ `replaced`, feature mới `from_ai` điểm 4 `locked`, "Đặt lịch khám online" chuyển sang phụ thuộc feature mới. Tổng 10/10 |
+| Duyệt lại | 409 `CHALLENGE_ALREADY_DECIDED` |
+
+### 7.4. Luồng team
+
+| Bước | Kết quả |
+|---|---|
+| Dev chưa là thành viên xem workspace / mời người khác / khai skill khi còn `Invited` | 404. Cố ý: không phải thành viên `Active` thì coi như workspace không tồn tại, để không dò được workspace của người khác |
+| Manager mời email không tồn tại / mời dev / mời lại | 404 / 201 (`Developer`, `Invited`) / 409 `WORKSPACE_MEMBER_ALREADY_EXISTS` |
+| Dev chấp nhận không gửi skill / skill 9 / skill 2 / chấp nhận lần 2 | 400 / 400 / 200 / 404 |
+| Budget sau khi có 2 dev | 20 (`devCountAtLock` của snapshot vẫn là 1, đúng số lúc Lock) |
+| Màn hình nhận feature khi dev skill 2, rồi nâng lên 4 | Skill 2: dev không đủ cho feature nào (điểm 3, 3, 4). Skill 4: dev đủ cho cả 3 |
+| Dev bấm Lock / từ chối challenge | 403 `WORKSPACE_PERMISSION_DENIED` |
+
+### 7.5. Định dạng lỗi
+
+Sau khi sửa (commit `1482064`), gọi lại các trường hợp lỗi:
+
+| Trường hợp | Kết quả |
+|---|---|
+| 404 | `NOT_FOUND` |
+| FluentValidation (skill 9) | `VALIDATION_FAILED`, `errors.SkillLevel` |
+| Body sai kiểu, sai enum, JSON hỏng, field lồng nhau sai kiểu | `VALIDATION_FAILED`, key theo tên field (`SkillLevel`, `Action`, `Items[0].FeatureId`), không lộ chi tiết của bộ đọc JSON |
+| Không gửi body | `VALIDATION_FAILED`, `errors.Body` |
+| Lỗi nghiệp vụ, gọi thành công | Không đổi |
+
+Server log không có lỗi trong suốt các lần chạy. Unit test vẫn 293/293 sau khi sửa.
+
+### 7.6. Tranh chấp đồng thời trên PostgreSQL thật
+
+Unit test chỉ giả lập chỉ mục unique bằng repository trong bộ nhớ, nên phần này bắn nhiều request **cùng lúc** (curl chạy song song) để kiểm tra chỉ mục thật của PostgreSQL.
+
+Chuẩn bị: gán `github_username` giả (`test-freelancer`, `test-devtest`) trực tiếp trong DB cho 2 tài khoản test, vì nhận feature cần username GitHub. Workspace "LOCK test" chưa liên kết repo nên không có lời gọi nào tới GitHub.
+
+**Hai dev cùng nhận một feature**: mỗi người bắn 3 request cùng lúc, tổng 6 request.
+
+| Feature | Kết quả |
+|---|---|
+| Quản lý hồ sơ bệnh án | 1 request thắng (Dev Test, 201, nhánh `feature/{id}-test-devtest`), 5 request `FEATURE_ALREADY_ASSIGNED` (409). DB có đúng 1 dòng assignment |
+| Đồng bộ lịch bác sĩ từ Google Calendar | 1 request thắng (Manager, 201), 5 request 409. DB có đúng 1 dòng |
+
+Không request nào lỗi 500. Màn hình nhận feature hiện đúng người thắng.
+
+**Sáu lần Lock cùng lúc** trên workspace mới "Race test - Lock" (ghi chú cá nhân, 4 feature, chấm 1 điểm mỗi feature, gọi AI phân tích 1 lần):
+
+| Kết quả | Số request |
+|---|---|
+| 201, snapshot v1 | 1 |
+| 409 `SNAPSHOT_VERSION_CONFLICT`: chạy song song, cùng ghi version 1, bị chỉ mục unique chặn (phần vá L2) | 2 |
+| 409 `PRODUCT_DEFINITION_LOCKED`: tới sau khi lần thắng đã lưu | 3 |
+
+DB có đúng 1 snapshot (v1, 4 feature), Product Definition `locked`, `firstLockedAt` bằng giờ tạo snapshot.
+
+### 7.7. Từ chối challenge và bỏ feature đang có người nhận
+
+Trên "LOCK test" (snapshot v2). Lúc bắt đầu: Manager giữ "Đặt lịch khám online" và "Đồng bộ lịch Google", Dev Test giữ "Quản lý hồ sơ bệnh án". Gọi AI thật 2 lần.
+
+| Bước | Kết quả |
+|---|---|
+| Dev Test gửi "Thông báo lịch hẹn qua Zalo" | 201, AI đề xuất điểm 4. Dev Test chỉnh thành 2 |
+| Manager từ chối, lý do "Ngoài phạm vi MVP, để sau khi ra mắt." | 200, `Rejected`, lưu lý do và người quyết định. Snapshot vẫn v2 |
+| Duyệt hoặc từ chối lại challenge đó | 409 `CHALLENGE_ALREADY_DECIDED` |
+| Manager gửi "Đồng bộ lịch bác sĩ từ Outlook Calendar", xác nhận điểm 4 | 201 (AI đề xuất 4), 200 |
+| Bỏ feature đã chốt "Hồ sơ bệnh án" mà không tick xác nhận | 409 `COMMITTED_REMOVAL_NOT_CONFIRMED` |
+| Bỏ "Đồng bộ lịch Google" khi chưa chọn cách xử lý feature phụ thuộc | 409 `DEPENDENTS_RESOLUTION_REQUIRED`, `details` liệt kê "Đặt lịch khám online" kèm `assignedTo: Freelance Dev` |
+| Duyệt với `Restructure` | 200, snapshot v3: "Đồng bộ lịch Google" `replaced`, "Outlook Calendar" `locked`, "Đặt lịch" chuyển sang phụ thuộc "Outlook Calendar" |
+| Assignment trong DB | Chỉ dòng "Đồng bộ lịch Google" có `released_at`. "Đặt lịch" (Manager) và "Hồ sơ" (Dev Test) giữ nguyên |
+| Nhận lại feature đã bị thay | 404 `NOT_FOUND` |
+| Màn hình nhận feature | "Outlook Calendar" chưa ai nhận; 2 feature còn lại giữ người nhận cũ |
+
+Ghi chú khi chạy: trên Windows, Git Bash truyền body tiếng Việt qua tham số của `curl` bị sai mã hóa. Server trả đúng `VALIDATION_FAILED` và không gọi AI. Script gửi lại body từ file UTF-8 thì chạy bình thường.
+
+## 8. Những gì chưa test
+
+- **Chất lượng AI thật:** AI thật mới chạy 6 lần (mục 7). Chất lượng điểm AI chấm và kết quả kiểm tra persona chưa được đánh giá trên nhiều dữ liệu.
+- **GitHub thật:** liên kết repo, tạo nhánh khi nhận feature, đăng nhập và kết nối GitHub qua trình duyệt. Cần người đăng nhập GitHub thật. Logic phía service đã có unit test.
+- **Hai lần duyệt challenge cùng lúc:** dùng chung chỉ mục và cách bắt lỗi với Lock (mục 7.6) nhưng chưa bắn song song thật, vì cần 2 challenge (2 lần gọi AI).
 - **Chưa làm và nên test sau khi làm:** Branch Protection, SignalR, thông báo feature backup.
+
+**Dữ liệu test còn lại trong DB dev:** workspace "LOCK test - Nha Khoa" (snapshot v3, 3 assignment), "Race test - Lock" (snapshot v1), tài khoản "Dev Test", và `github_username` giả của 2 tài khoản test.
