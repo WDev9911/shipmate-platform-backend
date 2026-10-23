@@ -173,6 +173,10 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(12)")
                         .HasColumnName("ai_verdict");
 
+                    b.Property<int?>("Complexity")
+                        .HasColumnType("integer")
+                        .HasColumnName("complexity");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -226,6 +230,10 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("product_definition_id");
 
+                    b.Property<int?>("ProposedComplexity")
+                        .HasColumnType("integer")
+                        .HasColumnName("proposed_complexity");
+
                     b.Property<string>("Role")
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)")
@@ -257,6 +265,165 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.HasIndex("ProductDefinitionId");
 
                     b.ToTable("features", (string)null);
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.FeatureAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AssignedUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_user_id");
+
+                    b.Property<DateTime?>("BranchCreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("branch_created_at");
+
+                    b.Property<string>("BranchName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("branch_name");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("FeatureId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("feature_id");
+
+                    b.Property<DateTime?>("ReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedUserId");
+
+                    b.HasIndex("FeatureId")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("feature_assignments", (string)null);
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.FeatureChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .HasMaxLength(18)
+                        .HasColumnType("character varying(18)")
+                        .HasColumnName("action");
+
+                    b.Property<bool>("CommittedRemovalConfirmed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("committed_removal_confirmed");
+
+                    b.Property<int?>("Complexity")
+                        .HasColumnType("integer")
+                        .HasColumnName("complexity");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("decided_at");
+
+                    b.Property<Guid?>("DecidedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("decided_by_user_id");
+
+                    b.Property<string>("DependentsResolution")
+                        .HasMaxLength(17)
+                        .HasColumnType("character varying(17)")
+                        .HasColumnName("dependents_resolution");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("FeatureId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("feature_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid?>("PersonaCheckFeatureId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("persona_check_feature_id");
+
+                    b.Property<bool?>("PersonaConflict")
+                        .HasColumnType("boolean")
+                        .HasColumnName("persona_conflict");
+
+                    b.Property<string>("PersonaConflictReason")
+                        .HasColumnType("text")
+                        .HasColumnName("persona_conflict_reason");
+
+                    b.Property<int?>("ProposedComplexity")
+                        .HasColumnType("integer")
+                        .HasColumnName("proposed_complexity");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("RejectionReason")
+                        .HasColumnType("text")
+                        .HasColumnName("rejection_reason");
+
+                    b.Property<Guid?>("RemovedFeatureId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("removed_feature_id");
+
+                    b.Property<Guid?>("ReplacementFeatureId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("replacement_feature_id");
+
+                    b.Property<Guid>("RequestedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by_user_id");
+
+                    b.Property<int?>("ResultingSnapshotVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("resulting_snapshot_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("feature_challenges", (string)null);
                 });
 
             modelBuilder.Entity("ShipMate.Domain.Entities.FeatureChangeLog", b =>
@@ -390,6 +557,47 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("github_connections", (string)null);
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.MvpSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<int>("DevCountAtLock")
+                        .HasColumnType("integer")
+                        .HasColumnName("dev_count_at_lock");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("hash");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("mvp_snapshots", (string)null);
                 });
 
             modelBuilder.Entity("ShipMate.Domain.Entities.PasswordResetToken", b =>
@@ -529,6 +737,100 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("refresh_tokens", (string)null);
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.SnapshotDependency", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("DependsOnFeatureId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("depends_on_feature_id");
+
+                    b.Property<Guid>("FeatureId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("feature_id");
+
+                    b.Property<Guid>("SnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("snapshot_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SnapshotId", "FeatureId", "DependsOnFeatureId")
+                        .IsUnique();
+
+                    b.ToTable("snapshot_dependencies", (string)null);
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.SnapshotFeature", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Complexity")
+                        .HasColumnType("integer")
+                        .HasColumnName("complexity");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("FeatureId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("feature_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(23)
+                        .HasColumnType("character varying(23)")
+                        .HasColumnName("origin");
+
+                    b.Property<string>("Role")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("role");
+
+                    b.Property<string>("Scope")
+                        .HasColumnType("text")
+                        .HasColumnName("scope");
+
+                    b.Property<Guid>("SnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("snapshot_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SnapshotId", "FeatureId")
+                        .IsUnique();
+
+                    b.ToTable("snapshot_features", (string)null);
                 });
 
             modelBuilder.Entity("ShipMate.Domain.Entities.User", b =>
@@ -719,6 +1021,10 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         .HasDefaultValue("developer")
                         .HasColumnName("role");
 
+                    b.Property<int?>("SkillLevel")
+                        .HasColumnType("integer")
+                        .HasColumnName("skill_level");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -816,6 +1122,36 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.Navigation("ProductDefinition");
                 });
 
+            modelBuilder.Entity("ShipMate.Domain.Entities.FeatureAssignment", b =>
+                {
+                    b.HasOne("ShipMate.Domain.Entities.User", "AssignedUser")
+                        .WithMany()
+                        .HasForeignKey("AssignedUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShipMate.Domain.Entities.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AssignedUser");
+
+                    b.Navigation("Workspace");
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.FeatureChallenge", b =>
+                {
+                    b.HasOne("ShipMate.Domain.Entities.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
+                });
+
             modelBuilder.Entity("ShipMate.Domain.Entities.FeatureChangeLog", b =>
                 {
                     b.HasOne("ShipMate.Domain.Entities.Feature", "Feature")
@@ -863,6 +1199,17 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.MvpSnapshot", b =>
+                {
+                    b.HasOne("ShipMate.Domain.Entities.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("ShipMate.Domain.Entities.PasswordResetToken", b =>
@@ -985,6 +1332,28 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("ShipMate.Domain.Entities.SnapshotDependency", b =>
+                {
+                    b.HasOne("ShipMate.Domain.Entities.MvpSnapshot", "Snapshot")
+                        .WithMany("Dependencies")
+                        .HasForeignKey("SnapshotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Snapshot");
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.SnapshotFeature", b =>
+                {
+                    b.HasOne("ShipMate.Domain.Entities.MvpSnapshot", "Snapshot")
+                        .WithMany("Features")
+                        .HasForeignKey("SnapshotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Snapshot");
+                });
+
             modelBuilder.Entity("ShipMate.Domain.Entities.Workspace", b =>
                 {
                     b.HasOne("ShipMate.Domain.Entities.User", "Owner")
@@ -1020,6 +1389,13 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.Navigation("ChangeLogs");
 
                     b.Navigation("Dependencies");
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.MvpSnapshot", b =>
+                {
+                    b.Navigation("Dependencies");
+
+                    b.Navigation("Features");
                 });
 
             modelBuilder.Entity("ShipMate.Domain.Entities.ProductDefinition", b =>

@@ -76,3 +76,27 @@ internal class GitHubRepoOwnerPayload
     [JsonPropertyName("login")]
     public string Login { get; set; } = string.Empty;
 }
+
+// GET /repos/{owner}/{repo}/git/ref/heads/{branch}
+
+internal class GitHubRefPayload
+
+{
+
+    [JsonPropertyName("object")]
+
+    public GitHubRefObjectPayload Object { get; set; } = new();
+
+}
+
+
+
+internal class GitHubRefObjectPayload
+
+{
+
+    [JsonPropertyName("sha")]
+
+    public string Sha { get; set; } = string.Empty;
+
+}

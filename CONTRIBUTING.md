@@ -78,6 +78,8 @@ Dự án theo Clean Architecture, dependency chỉ trỏ vào trong (`API → Ap
 7. Đăng ký DI: `AddScoped<IXxxRepository, XxxRepository>()` trong `Infrastructure/DependencyInjection.cs`, `AddScoped<IXxxService, XxxService>()` trong `Application/DependencyInjection.cs`.
 8. Tạo controller ở `API/Controllers/`, inject interface service (không inject thẳng implementation).
 9. Lỗi nghiệp vụ throw `NotFoundException`/exception phù hợp — `GlobalExceptionHandler` sẽ tự map sang HTTP status + response dạng ProblemDetails, không cần try/catch thủ công trong controller.
+    - Mọi response lỗi đều có `errorCode` để frontend rẽ nhánh: mã riêng của từng `AppException`, `NOT_FOUND` cho 404, `VALIDATION_FAILED` cho dữ liệu sai (cả lỗi FluentValidation lẫn body JSON sai kiểu). Lỗi `VALIDATION_FAILED` liệt kê từng field trong `errors`, key theo tên property (`SkillLevel`, `Items[0].Complexity`).
+    - Frontend hiển thị thông báo theo `errorCode` (và `errors`), không hiển thị nguyên văn `detail`.
 
 ## 4. Coding convention
 

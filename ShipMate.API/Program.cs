@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using ShipMate.API.Filters;
@@ -13,7 +14,37 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>())
-    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
+    // A body that can't be read (wrong type, unknown enum, broken JSON) is rejected before ValidationFilter runs.
+    // Answer it in the same shape as a FluentValidation failure, without the serializer's internal details.
+    .ConfigureApiBehaviorOptions(options => options.InvalidModelStateResponseFactory = context =>
+    {
+        // When the body is missing or can't be read, ASP.NET also adds "The request field is required." for the
+        // body parameter itself; that line is misleading next to the real body errors, so drop it.
+        var hasBodyErrors = context.ModelState.Keys.Any(IsBodyKey);
+        var problemDetails = new ProblemDetails
+        {
+            Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+            Status = StatusCodes.Status400BadRequest,
+            Title = GlobalExceptionHandler.ValidationTitle,
+            Detail = GlobalExceptionHandler.ValidationDetail,
+            Instance = context.HttpContext.Request.Path
+        };
+        problemDetails.Extensions["errorCode"] = GlobalExceptionHandler.ValidationFailedCode;
+        problemDetails.Extensions["errors"] = context.ModelState
+            .Where(entry => entry.Value!.Errors.Count > 0 && (!hasBodyErrors || IsBodyKey(entry.Key)))
+            .GroupBy(entry => ToFieldName(entry.Key))
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .SelectMany(entry => entry.Key.StartsWith('$')
+                        ? ["The value is not valid."]
+                        : entry.Value!.Errors.Select(e => e.ErrorMessage))
+                    .Distinct()
+                    .ToArray());
+
+        return new BadRequestObjectResult(problemDetails) { ContentTypes = { "application/problem+json" } };
+    });
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -99,3 +130,18 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+// "" is a missing body; "$..." is a JSON path inside a body that could not be read.
+static bool IsBodyKey(string modelStateKey) => modelStateKey.Length == 0 || modelStateKey.StartsWith('$');
+
+// "$.items[0].complexity" -> "Items[0].Complexity", the same key FluentValidation uses for that field.
+static string ToFieldName(string modelStateKey)
+{
+    if (modelStateKey is "" or "$")
+    {
+        return "Body";
+    }
+
+    var path = modelStateKey.StartsWith("$.") ? modelStateKey[2..] : modelStateKey;
+    return string.Join('.', path.Split('.').Select(part => part.Length == 0 ? part : char.ToUpperInvariant(part[0]) + part[1..]));
+}

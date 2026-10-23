@@ -43,6 +43,17 @@ public class ProductDefinitionRepository : IProductDefinitionRepository
     public async Task AddChangeLogAsync(FeatureChangeLog changeLog) =>
         await _context.FeatureChangeLogs.AddAsync(changeLog);
 
+    public async Task AddSnapshotAsync(MvpSnapshot snapshot) =>
+        await _context.MvpSnapshots.AddAsync(snapshot);
+
+    public async Task<MvpSnapshot?> GetLatestSnapshotAsync(Guid workspaceId) =>
+        await _context.MvpSnapshots
+            .Include(s => s.Features)
+            .Include(s => s.Dependencies)
+            .Where(s => s.WorkspaceId == workspaceId)
+            .OrderByDescending(s => s.Version)
+            .FirstOrDefaultAsync();
+
     public async Task<List<FeatureChangeLog>> GetChangeLogsAsync(Guid featureId) =>
         await _context.FeatureChangeLogs
             .Include(l => l.PerformedBy)
@@ -51,5 +62,5 @@ public class ProductDefinitionRepository : IProductDefinitionRepository
             .ToListAsync();
 
     public async Task<bool> SaveChangesAsync() =>
-        await _context.SaveChangesAsync() > 0;
+        await UniqueViolation.SaveGuardingSnapshotVersionAsync(_context);
 }

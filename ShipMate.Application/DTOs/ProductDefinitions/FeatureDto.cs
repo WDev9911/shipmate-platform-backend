@@ -19,6 +19,8 @@ public class FeatureDto
     public bool PersonaConflict { get; set; }
     public string? PersonaConflictReason { get; set; }
     public bool DevDecided { get; set; }
+    public int? ProposedComplexity { get; set; }
+    public int? Complexity { get; set; }
     public int Position { get; set; }
     public List<FeatureDependencyDto> DependsOn { get; set; } = new();
 }

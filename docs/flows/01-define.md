@@ -189,6 +189,10 @@ Sau lần LOCK đầu tiên thành công, Product Definition bị **đóng băng
 21. Cảnh báo "liên kết trỏ tới feature không còn tồn tại" được trả trong response của `analyze` (`removedDependencies`).
 22. Feature được thêm chỉ vì `instruction` có `origin = from_ai`, vì `instruction` là yêu cầu của Dev, không phải lời khách.
 
+**Đóng băng sau LOCK (Bước 9)**
+
+23. Product Definition ở trạng thái `locked` thì mọi thao tác ghi của DEFINE bị từ chối với lỗi `PRODUCT_DEFINITION_LOCKED` (409): sửa, loại, gộp feature, sửa dependency, thêm/sửa/xóa feature đã chốt, sửa constraints, chạy lại AI, chuyển `READY_FOR_LOCK`, và sửa `VisionPrompt` của workspace. Đọc dữ liệu vẫn bình thường. Trạng thái `locked` do LOCK đặt khi Lock thành công lần đầu.
+
 ## Điểm còn để ngỏ
 
 - Bước 9 cần người phụ trách LOCK xác nhận.

@@ -82,6 +82,13 @@ public class WorkspacesController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPut("{id:guid}/members/me/skill")]
+    public async Task<IActionResult> UpdateMySkill(Guid id, UpdateMySkillRequest request)
+    {
+        var result = await _workspaceService.UpdateMySkillAsync(_currentUserService.UserId!.Value, id, request);
+        return Ok(result);
+    }
+
     [HttpDelete("{id:guid}/members/{userId:guid}")]
     public async Task<IActionResult> RemoveMember(Guid id, Guid userId)
     {
@@ -90,9 +97,9 @@ public class WorkspacesController : ControllerBase
     }
 
     [HttpPost("{id:guid}/members/accept")]
-    public async Task<IActionResult> AcceptInvitation(Guid id)
+    public async Task<IActionResult> AcceptInvitation(Guid id, AcceptInvitationRequest request)
     {
-        var result = await _workspaceService.AcceptInvitationAsync(_currentUserService.UserId!.Value, id);
+        var result = await _workspaceService.AcceptInvitationAsync(_currentUserService.UserId!.Value, id, request);
         return Ok(result);
     }
 

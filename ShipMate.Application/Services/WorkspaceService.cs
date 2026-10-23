@@ -98,10 +98,15 @@ public class WorkspaceService : IWorkspaceService
 
         if (request.VisionPrompt is not null && request.VisionPrompt != workspace.VisionPrompt)
         {
-            workspace.VisionPrompt = request.VisionPrompt;
-
-            // The vision prompt is DEFINE's input, so changing it also changes the product definition.
+            // The vision prompt is DEFINE's input, so changing it also changes the product definition —
+            // and once that is locked, the prompt is frozen with it.
             var productDefinition = await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId);
+            if (productDefinition is { IsLocked: true })
+            {
+                throw new ProductDefinitionLockedException();
+            }
+
+            workspace.VisionPrompt = request.VisionPrompt;
             productDefinition?.MarkModified(now);
         }
 
@@ -222,6 +227,20 @@ public class WorkspaceService : IWorkspaceService
         return _mapper.Map<WorkspaceMemberDto>(targetMembership);
     }
 
+    public async Task<WorkspaceMemberDto> UpdateMySkillAsync(Guid userId, Guid workspaceId, UpdateMySkillRequest request)
+    {
+        await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
+
+        var membership = await GetActiveMembershipOrThrow(workspaceId, userId);
+        membership.SkillLevel = request.SkillLevel;
+        membership.UpdatedAt = DateTime.UtcNow;
+        _workspaceMemberRepository.Update(membership);
+
+        await _workspaceRepository.SaveChangesAsync();
+
+        return _mapper.Map<WorkspaceMemberDto>(membership);
+    }
+
     public async Task RemoveMemberAsync(Guid userId, Guid workspaceId, Guid memberUserId)
     {
         await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
@@ -247,11 +266,12 @@ public class WorkspaceService : IWorkspaceService
         return _mapper.Map<List<WorkspaceInvitationDto>>(invitations);
     }
 
-    public async Task<WorkspaceMemberDto> AcceptInvitationAsync(Guid userId, Guid workspaceId)
+    public async Task<WorkspaceMemberDto> AcceptInvitationAsync(Guid userId, Guid workspaceId, AcceptInvitationRequest request)
     {
         var invitation = await GetPendingInvitationOrThrow(userId, workspaceId);
 
         invitation.Status = WorkspaceMemberStatus.Active;
+        invitation.SkillLevel = request.SkillLevel;
         invitation.UpdatedAt = DateTime.UtcNow;
         _workspaceMemberRepository.Update(invitation);
 
@@ -338,20 +358,8 @@ public class WorkspaceService : IWorkspaceService
         await _workspaceRepository.SaveChangesAsync();
     }
 
-    private async Task<string> GetValidGitHubAccessTokenOrThrow(Guid userId)
-    {
-        var connection = await _gitHubConnectionRepository.GetByUserIdAsync(userId)
-            ?? throw new GitHubNotConnectedException();
-
-        if (connection.AccessTokenExpiresAt is not null && connection.AccessTokenExpiresAt < DateTime.UtcNow)
-        {
-            // Auto-refreshing via the stored GitHub refresh token is BUILD-phase work — for now,
-            // just ask the Manager to sign in with GitHub again to get a fresh access token.
-            throw new GitHubNotConnectedException();
-        }
-
-        return _encryptionService.Decrypt(connection.GitHubAccessTokenEncrypted);
-    }
+    private Task<string> GetValidGitHubAccessTokenOrThrow(Guid userId) =>
+        GitHubAccessTokens.GetValidOrThrowAsync(_gitHubConnectionRepository, _encryptionService, userId);
 
     private async Task<WorkspaceMember> GetActiveMembershipOrThrow(Guid workspaceId, Guid memberUserId)
     {

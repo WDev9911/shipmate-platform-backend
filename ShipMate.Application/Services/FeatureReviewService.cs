@@ -75,20 +75,7 @@ public class FeatureReviewService : IFeatureReviewService
             throw new CommittedFeatureChangeRequiredException();
         }
 
-        if (request.Name is not null)
-        {
-            feature.Name = request.Name;
-        }
-
-        if (request.Description is not null)
-        {
-            feature.Description = request.Description;
-        }
-
-        if (request.Scope is not null)
-        {
-            feature.Scope = request.Scope;
-        }
+        feature.EditContent(request.Name, request.Description, request.Scope);
 
         var now = DateTime.UtcNow;
         MarkDecided(feature, feature.Status, now);
@@ -264,20 +251,7 @@ public class FeatureReviewService : IFeatureReviewService
         }
         else
         {
-            if (request.Name is not null)
-            {
-                feature.Name = request.Name;
-            }
-
-            if (request.Description is not null)
-            {
-                feature.Description = request.Description;
-            }
-
-            if (request.Scope is not null)
-            {
-                feature.Scope = request.Scope;
-            }
+            feature.EditContent(request.Name, request.Description, request.Scope);
 
             MarkDecided(feature, feature.Status, now);
         }
@@ -449,6 +423,11 @@ public class FeatureReviewService : IFeatureReviewService
 
         var productDefinition = await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId)
             ?? throw new NotFoundException("Feature", featureId);
+
+        if (productDefinition.IsLocked)
+        {
+            throw new ProductDefinitionLockedException();
+        }
 
         if (!await _productDefinitionRepository.HasSuccessfulAnalysisRunAsync(productDefinition.Id))
         {

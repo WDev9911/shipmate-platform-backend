@@ -14,5 +14,8 @@ public class WorkspaceMember : BaseEntity
     public WorkspaceMemberRole Role { get; set; } = WorkspaceMemberRole.Developer;
     public WorkspaceMemberStatus Status { get; set; } = WorkspaceMemberStatus.Active;
 
+    // Self-declared 1-5 skill level; null until the member fills it in. LOCK uses it for the Skill Ceiling.
+    public int? SkillLevel { get; set; }
+
     public DateTime? UpdatedAt { get; set; }
 }

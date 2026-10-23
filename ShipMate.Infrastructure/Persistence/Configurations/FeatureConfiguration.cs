@@ -55,6 +55,8 @@ public class FeatureConfiguration : IEntityTypeConfiguration<Feature>
         builder.Property(f => f.PersonaConflictReason).HasColumnName("persona_conflict_reason").HasColumnType("text");
 
         builder.Property(f => f.DevDecided).HasColumnName("dev_decided");
+        builder.Property(f => f.ProposedComplexity).HasColumnName("proposed_complexity");
+        builder.Property(f => f.Complexity).HasColumnName("complexity");
         builder.Property(f => f.Position).HasColumnName("position");
 
         builder.Property(f => f.CreatedAt).HasColumnName("created_at");

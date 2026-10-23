@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "persona_conflict": { "type": "boolean" },
+    "reason": { "type": "string" }
+  },
+  "required": ["persona_conflict", "reason"],
+  "additionalProperties": false
+}

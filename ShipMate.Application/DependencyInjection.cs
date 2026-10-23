@@ -20,6 +20,10 @@ public static class DependencyInjection
         services.AddScoped<IProductDefinitionService, ProductDefinitionService>();
         services.AddScoped<IProductDefinitionAnalysisService, ProductDefinitionAnalysisService>();
         services.AddScoped<IFeatureReviewService, FeatureReviewService>();
+        services.AddScoped<IFeatureComplexityService, FeatureComplexityService>();
+        services.AddScoped<ILockService, LockService>();
+        services.AddScoped<IFeatureAssignmentService, FeatureAssignmentService>();
+        services.AddScoped<IFeatureChallengeService, FeatureChallengeService>();
 
         return services;
     }
