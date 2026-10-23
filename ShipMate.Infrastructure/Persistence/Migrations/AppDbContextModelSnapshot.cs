@@ -73,6 +73,10 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("ConstraintsSnapshot")
+                        .HasColumnType("text")
+                        .HasColumnName("constraints_snapshot");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -935,6 +939,35 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
 
                             b1.Navigation("SupportingRoles");
                         });
+
+                    b.OwnsOne("ShipMate.Domain.ValueObjects.ProjectConstraints", "Constraints", b1 =>
+                        {
+                            b1.Property<Guid>("ProductDefinitionId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<string>("Company")
+                                .HasColumnType("text")
+                                .HasAnnotation("Relational:JsonPropertyName", "company");
+
+                            b1.Property<string>("Customer")
+                                .HasColumnType("text")
+                                .HasAnnotation("Relational:JsonPropertyName", "customer");
+
+                            b1.Property<string>("Team")
+                                .HasColumnType("text")
+                                .HasAnnotation("Relational:JsonPropertyName", "team");
+
+                            b1.HasKey("ProductDefinitionId");
+
+                            b1.ToTable("product_definitions");
+
+                            b1.ToJson("constraints");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ProductDefinitionId");
+                        });
+
+                    b.Navigation("Constraints");
 
                     b.Navigation("LockedPersona");
 

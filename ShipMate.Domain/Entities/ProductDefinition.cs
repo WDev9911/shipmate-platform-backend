@@ -13,6 +13,9 @@ public class ProductDefinition : BaseEntity
 
     // Null until the first successful AI analysis.
     public LockedPersona? LockedPersona { get; set; }
+    // Optional; null when the developer gave none.
+    public ProjectConstraints? Constraints { get; set; }
+
     public string? Problem { get; set; }
     public string? Solution { get; set; }
 

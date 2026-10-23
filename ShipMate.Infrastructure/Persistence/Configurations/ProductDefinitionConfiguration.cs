@@ -36,6 +36,15 @@ public class ProductDefinitionConfiguration : IEntityTypeConfiguration<ProductDe
             });
         });
 
+        builder.OwnsOne(p => p.Constraints, constraints =>
+        {
+            constraints.ToJson("constraints");
+            constraints.Ignore(c => c.IsEmpty);
+            constraints.Property(c => c.Customer).HasJsonPropertyName("customer");
+            constraints.Property(c => c.Company).HasJsonPropertyName("company");
+            constraints.Property(c => c.Team).HasJsonPropertyName("team");
+        });
+
         builder.Property(p => p.Problem).HasColumnName("problem").HasColumnType("text");
         builder.Property(p => p.Solution).HasColumnName("solution").HasColumnType("text");
 

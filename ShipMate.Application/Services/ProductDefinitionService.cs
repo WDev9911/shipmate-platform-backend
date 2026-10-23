@@ -6,6 +6,7 @@ using ShipMate.Application.Interfaces.Services;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
 using ShipMate.Domain.Policies;
+using ShipMate.Domain.ValueObjects;
 
 namespace ShipMate.Application.Services;
 
@@ -84,6 +85,38 @@ public class ProductDefinitionService : IProductDefinitionService
 
         return _mapper.Map<ProductDefinitionDto>(productDefinition);
     }
+
+    public async Task<ProductDefinitionDto> UpdateConstraintsAsync(
+        Guid userId, Guid workspaceId, UpdateProjectConstraintsRequest request)
+    {
+        await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
+
+        var productDefinition = await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId);
+        if (productDefinition is null)
+        {
+            productDefinition = new ProductDefinition
+            {
+                WorkspaceId = workspaceId,
+                Status = ProductDefinitionStatus.Draft
+            };
+            await _productDefinitionRepository.AddAsync(productDefinition);
+        }
+
+        var constraints = new ProjectConstraints
+        {
+            Customer = NullIfBlank(request.Customer),
+            Company = NullIfBlank(request.Company),
+            Team = NullIfBlank(request.Team)
+        };
+        productDefinition.Constraints = constraints.IsEmpty ? null : constraints;
+
+        productDefinition.MarkModified(DateTime.UtcNow);
+        await _productDefinitionRepository.SaveChangesAsync();
+
+        return _mapper.Map<ProductDefinitionDto>(productDefinition);
+    }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     public async Task<ProductDefinitionReportDto> GetReportAsync(Guid userId, Guid workspaceId)
     {
