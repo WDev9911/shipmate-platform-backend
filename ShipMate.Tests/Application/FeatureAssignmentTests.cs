@@ -15,9 +15,8 @@ public class FeatureAssignmentTests
     private readonly IFeatureAssignmentRepository _assignments = Substitute.For<IFeatureAssignmentRepository>();
     private readonly IWorkspaceMemberRepository _members = Substitute.For<IWorkspaceMemberRepository>();
     private readonly IWorkspaceAccessGuard _guard = Substitute.For<IWorkspaceAccessGuard>();
-    private readonly IGitHubOAuthService _gitHub = Substitute.For<IGitHubOAuthService>();
-    private readonly IGitHubConnectionRepository _connections = Substitute.For<IGitHubConnectionRepository>();
-    private readonly IEncryptionService _encryption = Substitute.For<IEncryptionService>();
+    private readonly IGitHubAppService _gitHub = Substitute.For<IGitHubAppService>();
+    private readonly IWorkspaceNotifier _notifier = Substitute.For<IWorkspaceNotifier>();
     private readonly Workspace _workspace = new();
     private readonly FeatureAssignmentService _service;
     private readonly Guid _workspaceId = Guid.NewGuid();
@@ -27,7 +26,7 @@ public class FeatureAssignmentTests
 
     public FeatureAssignmentTests()
     {
-        _service = new FeatureAssignmentService(_definitions, _assignments, _members, _guard, _gitHub, _connections, _encryption);
+        _service = new FeatureAssignmentService(_definitions, _assignments, _members, _guard, _gitHub, _notifier);
         _guard.GetWorkspaceAsMemberAsync(Arg.Any<Guid>(), _workspaceId).Returns(_workspace);
 
         _me = Member("Me", skill: 3, github: "me-dev");
@@ -144,24 +143,34 @@ public class FeatureAssignmentTests
 
     // ---- creating the branch on GitHub ----
 
-    private void GivenLinkedRepoAndMyGitHubToken()
+    private void GivenLinkedRepo(bool isOrganization = true)
     {
         _workspace.GitHubRepoOwner = "clinic";
         _workspace.GitHubRepoName = "booking";
-        _connections.GetByUserIdAsync(_me.UserId).Returns(new GitHubConnection { GitHubAccessTokenEncrypted = "enc" });
-        _encryption.Decrypt("enc").Returns("my-token");
+        _workspace.GitHubInstallationId = 4242;
+        _workspace.GitHubRepoIsOrganization = isOrganization;
     }
 
     [Fact]
-    public async Task Claim_WithALinkedRepo_CreatesTheBranchWithTheDevelopersOwnToken()
+    public async Task Claim_WithALinkedRepo_TheBotCreatesAndProtectsTheBranch()
     {
-        GivenLinkedRepoAndMyGitHubToken();
+        GivenLinkedRepo();
 
         var result = await Claim(_easy);
 
         Assert.True(result.BranchCreated);
-        await _gitHub.Received(1).CreateBranchFromDefaultAsync("my-token", "clinic", "booking", result.BranchName);
+        await _gitHub.Received(1).CreateProtectedBranchAsync(4242, true, "clinic", "booking", result.BranchName);
         await _assignments.Received(1).SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Claim_OnAPersonalRepo_TellsTheBotItCannotRestrictPushes()
+    {
+        GivenLinkedRepo(isOrganization: false);
+
+        var result = await Claim(_easy);
+
+        await _gitHub.Received(1).CreateProtectedBranchAsync(4242, false, "clinic", "booking", result.BranchName);
     }
 
     [Fact]
@@ -170,14 +179,26 @@ public class FeatureAssignmentTests
         var result = await Claim(_easy);
 
         Assert.False(result.BranchCreated);
-        await _gitHub.DidNotReceiveWithAnyArgs().CreateBranchFromDefaultAsync(default!, default!, default!, default!);
+        await _gitHub.DidNotReceiveWithAnyArgs().CreateProtectedBranchAsync(default, default, default!, default!, default!);
+    }
+
+    [Fact]
+    public async Task Claim_RepoLinkedBeforeTheAppExisted_OnlyStoresTheBranchName()
+    {
+        GivenLinkedRepo();
+        _workspace.GitHubInstallationId = null;
+
+        var result = await Claim(_easy);
+
+        Assert.False(result.BranchCreated);
+        await _gitHub.DidNotReceiveWithAnyArgs().CreateProtectedBranchAsync(default, default, default!, default!, default!);
     }
 
     [Fact]
     public async Task Claim_GitHubRefuses_TheClaimStillStandsWithoutABranch()
     {
-        GivenLinkedRepoAndMyGitHubToken();
-        _gitHub.CreateBranchFromDefaultAsync(default!, default!, default!, default!)
+        GivenLinkedRepo();
+        _gitHub.CreateProtectedBranchAsync(default, default, default!, default!, default!)
             .ReturnsForAnyArgs<Task>(_ => throw new GitHubBranchCreationFailedException());
 
         var result = await Claim(_easy);
@@ -187,9 +208,27 @@ public class FeatureAssignmentTests
     }
 
     [Fact]
+    public async Task Claim_BranchNotCreated_WhenProtectionFails_SoARetryRepeatsBothSteps()
+    {
+        GivenLinkedRepo();
+        _gitHub.CreateProtectedBranchAsync(default, default, default!, default!, default!)
+            .ReturnsForAnyArgs<Task>(_ => throw new GitHubBranchCreationFailedException());
+        var assignment = new FeatureAssignment
+        {
+            WorkspaceId = _workspaceId, FeatureId = _easy.FeatureId, AssignedUserId = _me.UserId, BranchName = "feature/x"
+        };
+        _assignments.GetByWorkspaceIdAsync(_workspaceId).Returns([assignment]);
+
+        await Assert.ThrowsAsync<GitHubBranchCreationFailedException>(() =>
+            _service.RetryBranchAsync(_me.UserId, _workspaceId, _easy.FeatureId));
+
+        Assert.Null(assignment.BranchCreatedAt);
+    }
+
+    [Fact]
     public async Task RetryBranch_AfterAFailure_CreatesItNow()
     {
-        GivenLinkedRepoAndMyGitHubToken();
+        GivenLinkedRepo();
         var assignment = new FeatureAssignment
         {
             WorkspaceId = _workspaceId, FeatureId = _easy.FeatureId, AssignedUserId = _me.UserId, BranchName = "feature/x"
@@ -239,6 +278,57 @@ public class FeatureAssignmentTests
         Assert.Equal(1, snapshot.Version);
         Assert.NotEqual("old", snapshot.Hash);
         Assert.Equal(64, snapshot.Hash.Length);
+    }
+
+    [Fact]
+    public async Task Claim_BackupFeature_TellsTheDevelopersWaitingOnIt()
+    {
+        var backup = SnapshotFeatureOf("backup", complexity: 2);
+        backup.Status = SnapshotFeatureStatus.Backup;
+        var waiting = SnapshotFeatureOf("waiting", complexity: 2);
+        var snapshot = (await _definitions.GetLatestSnapshotAsync(_workspaceId))!;
+        snapshot.Features.Add(backup);
+        snapshot.Features.Add(waiting);
+        snapshot.Dependencies.Add(new SnapshotDependency { FeatureId = waiting.FeatureId, DependsOnFeatureId = backup.FeatureId });
+        var holder = Guid.NewGuid();
+        _assignments.GetByWorkspaceIdAsync(_workspaceId).Returns(new List<FeatureAssignment>
+        {
+            new() { FeatureId = waiting.FeatureId, AssignedUserId = holder }
+        });
+
+        await Claim(backup);
+
+        await _notifier.Received(1).PublishToUsersAsync(
+            Arg.Is<IEnumerable<Guid>>(users => users.Single() == holder), WorkspaceEvents.BackupFeatureClaimed, Arg.Any<object>());
+    }
+
+    [Fact]
+    public async Task Claim_BackupFeature_DoesNotTellTheOneWhoTookIt()
+    {
+        var backup = SnapshotFeatureOf("backup", complexity: 2);
+        backup.Status = SnapshotFeatureStatus.Backup;
+        var waiting = SnapshotFeatureOf("waiting", complexity: 2);
+        var snapshot = (await _definitions.GetLatestSnapshotAsync(_workspaceId))!;
+        snapshot.Features.Add(backup);
+        snapshot.Features.Add(waiting);
+        snapshot.Dependencies.Add(new SnapshotDependency { FeatureId = waiting.FeatureId, DependsOnFeatureId = backup.FeatureId });
+        _assignments.GetByWorkspaceIdAsync(_workspaceId).Returns(new List<FeatureAssignment>
+        {
+            new() { FeatureId = waiting.FeatureId, AssignedUserId = _me.UserId }
+        });
+
+        await Claim(backup);
+
+        await _notifier.Received(1).PublishToUsersAsync(
+            Arg.Is<IEnumerable<Guid>>(users => !users.Any()), WorkspaceEvents.BackupFeatureClaimed, Arg.Any<object>());
+    }
+
+    [Fact]
+    public async Task Claim_OrdinaryFeature_SendsNoBackupMessage()
+    {
+        await Claim(_easy);
+
+        await _notifier.DidNotReceiveWithAnyArgs().PublishToUsersAsync(default!, default!, default!);
     }
 
     [Fact]

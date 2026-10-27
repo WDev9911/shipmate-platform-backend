@@ -4,6 +4,7 @@ using ShipMate.Application.Exceptions;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Application.Interfaces.Services;
 using ShipMate.Application.Services;
+using ShipMate.Domain.Common;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
 
@@ -15,6 +16,8 @@ public class LockServiceTests
     private readonly IWorkspaceMemberRepository _members = Substitute.For<IWorkspaceMemberRepository>();
     private readonly IWorkspaceAccessGuard _guard = Substitute.For<IWorkspaceAccessGuard>();
     private readonly LockService _service;
+    private readonly InMemoryAuditTrailRepository _auditEntries = new();
+    private readonly AuditTrail _audit;
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _workspaceId = Guid.NewGuid();
     private readonly Workspace _workspace = new();
@@ -24,7 +27,8 @@ public class LockServiceTests
 
     public LockServiceTests()
     {
-        _service = new LockService(_repository, _members, _guard, Substitute.For<IMapper>());
+        _audit = new AuditTrail(_auditEntries);
+        _service = new LockService(_repository, _members, _guard, _audit, Substitute.For<IMapper>());
 
         TestData.DependsOn(_b, _a);
         _definition = TestData.Definition(_a, _b);
@@ -74,6 +78,32 @@ public class LockServiceTests
         var dependency = Assert.Single(saved.Dependencies);
         Assert.Equal(_b.Id, dependency.FeatureId);
         Assert.Equal(_a.Id, dependency.DependsOnFeatureId);
+    }
+
+    [Fact]
+    public async Task Lock_WritesASnapshotLockedRecordWithTheVersionAndHash()
+    {
+        MvpSnapshot? saved = null;
+        await _repository.AddSnapshotAsync(Arg.Do<MvpSnapshot>(s => saved = s));
+
+        await _service.LockAsync(_userId, _workspaceId);
+
+        var record = Assert.Single(_auditEntries.Entries);
+        Assert.Equal(AuditTypes.SnapshotLocked, record.AuditType);
+        Assert.Equal(_workspaceId, record.WorkspaceId);
+        Assert.Equal(_userId, record.ActorUserId);
+        Assert.Contains(saved!.Hash, record.Payload);
+        Assert.Contains("\"version\":1", record.Payload);
+    }
+
+    [Fact]
+    public async Task Lock_BlockedByTheGate_WritesNoRecord()
+    {
+        _a.Complexity = null;
+
+        await Assert.ThrowsAnyAsync<Exception>(() => _service.LockAsync(_userId, _workspaceId));
+
+        Assert.Empty(_auditEntries.Entries);
     }
 
     [Fact]

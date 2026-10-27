@@ -29,6 +29,9 @@ internal sealed class LockWorld
     public FakeAssignmentRepository Assignments { get; }
     public FakeChallengeRepository Challenges { get; } = new();
     public FakeAiGateway Ai { get; } = new();
+    public IWorkspaceNotifier Notifier { get; } = Substitute.For<IWorkspaceNotifier>();
+    public InMemoryAuditTrailRepository AuditEntries { get; } = new();
+    public AuditTrail Audit { get; }
 
     public LockService Lock { get; }
     public FeatureComplexityService Complexity { get; }
@@ -44,6 +47,7 @@ internal sealed class LockWorld
     public LockWorld()
     {
         Assignments = new FakeAssignmentRepository(Members);
+        Audit = new AuditTrail(AuditEntries);
         Definition = new ProductDefinition
         {
             WorkspaceId = Workspace.Id,
@@ -68,11 +72,11 @@ internal sealed class LockWorld
             };
         });
 
-        Lock = new LockService(Definitions, Members, guard, mapper);
+        Lock = new LockService(Definitions, Members, guard, Audit, mapper);
         Complexity = new FeatureComplexityService(Definitions, guard, Ai, mapper);
         Assignment = new FeatureAssignmentService(Definitions, Assignments, Members, guard,
-            Substitute.For<IGitHubOAuthService>(), Substitute.For<IGitHubConnectionRepository>(), Substitute.For<IEncryptionService>());
-        Challenge = new FeatureChallengeService(Challenges, Definitions, Assignments, Members, guard, Ai, mapper);
+            Substitute.For<IGitHubAppService>(), Notifier);
+        Challenge = new FeatureChallengeService(Challenges, Definitions, Assignments, Members, guard, Ai, Audit, Notifier, mapper);
         DefinitionService = new ProductDefinitionService(Definitions, guard, mapper);
         Review = new FeatureReviewService(Definitions, guard, mapper);
         Analysis = new ProductDefinitionAnalysisService(
@@ -80,8 +84,8 @@ internal sealed class LockWorld
         Workspaces = new WorkspaceService(
             Substitute.For<IWorkspaceRepository>(), Members, guard, Definitions,
             Substitute.For<IUserRepository>(), Substitute.For<IGitHubConnectionRepository>(),
-            Substitute.For<IGitHubOAuthService>(), Substitute.For<IEncryptionService>(),
-            Substitute.For<IEmailSender>(), mapper);
+            Substitute.For<IGitHubOAuthService>(), Substitute.For<IGitHubAppService>(), Substitute.For<IEncryptionService>(),
+            Substitute.For<IEmailSender>(), Notifier, mapper);
     }
 
     // ---- building the scene ----

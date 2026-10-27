@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "properties": {
+    "confidence_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "suspected_feature_ids": { "type": "array", "items": { "type": "string" } },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["file", "description"],
+        "additionalProperties": false
+      }
+    },
+    "suggestions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string" },
+          "problem": { "type": "string" },
+          "suggestion": { "type": "string" },
+          "reason": { "type": "string" }
+        },
+        "required": ["file", "problem", "suggestion", "reason"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["confidence_score", "suspected_feature_ids", "findings", "suggestions"],
+  "additionalProperties": false
+}

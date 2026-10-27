@@ -32,6 +32,9 @@ public static class DependencyInjection
         services.AddScoped<IProductDefinitionRepository, ProductDefinitionRepository>();
         services.AddScoped<IFeatureAssignmentRepository, FeatureAssignmentRepository>();
         services.AddScoped<IFeatureChallengeRepository, FeatureChallengeRepository>();
+        services.AddScoped<IBuildSubmissionRepository, BuildSubmissionRepository>();
+        services.AddScoped<IDriftAlertRepository, DriftAlertRepository>();
+        services.AddScoped<IAuditTrailRepository, AuditTrailRepository>();
 
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
@@ -52,6 +55,8 @@ public static class DependencyInjection
         });
 
         services.AddHttpClient<IGitHubOAuthService, GitHubOAuthService>();
+        services.AddHttpClient<IGitHubAppService, GitHubAppService>();
+        services.AddHostedService<BuildAnalysisWorker>();
 
         services.Configure<GeminiOptions>(configuration.GetSection(GeminiOptions.SectionName));
         services.AddHttpClient<IAiGateway, GeminiAiGateway>((serviceProvider, client) =>

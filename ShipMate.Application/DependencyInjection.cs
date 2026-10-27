@@ -24,6 +24,16 @@ public static class DependencyInjection
         services.AddScoped<ILockService, LockService>();
         services.AddScoped<IFeatureAssignmentService, FeatureAssignmentService>();
         services.AddScoped<IFeatureChallengeService, FeatureChallengeService>();
+        services.AddScoped<IBuildService, BuildService>();
+        services.AddScoped<IBuildAnalysisService, BuildAnalysisService>();
+        services.AddScoped<IBuildApprovalService, BuildApprovalService>();
+        services.AddScoped<IDirectPushDetector, DirectPushDetector>();
+        services.AddScoped<IDriftAlertService, DriftAlertService>();
+        services.AddScoped<IDriftThresholdService, DriftThresholdService>();
+        services.AddScoped<INextBestActionService, NextBestActionService>();
+        services.AddScoped<IAuditTrail, AuditTrail>();
+        services.AddSingleton<BuildAnalysisQueue>();
+        services.AddSingleton<IBuildAnalysisQueue>(sp => sp.GetRequiredService<BuildAnalysisQueue>());
 
         return services;
     }

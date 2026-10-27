@@ -36,10 +36,22 @@ public class WorkspaceConfiguration : IEntityTypeConfiguration<Workspace>
         builder.Property(w => w.GitHubRepoOwner).HasColumnName("github_repo_owner").HasMaxLength(100);
         builder.Property(w => w.GitHubRepoName).HasColumnName("github_repo_name").HasMaxLength(100);
         builder.Property(w => w.WebhookSecretEncrypted).HasColumnName("webhook_secret").HasColumnType("text");
+        builder.Property(w => w.GitHubInstallationId).HasColumnName("github_installation_id");
+        builder.Property(w => w.GitHubRepoIsOrganization)
+            .HasColumnName("github_repo_is_organization")
+            .HasDefaultValue(false);
+        builder.Property(w => w.GitHubMergeGateEnabled)
+            .HasColumnName("github_merge_gate_enabled")
+            .HasDefaultValue(false);
+        builder.Property(w => w.LastAuditedMainSha).HasColumnName("last_audited_main_sha").HasMaxLength(40);
+        builder.Property(w => w.GovernanceSuspendedAt).HasColumnName("governance_suspended_at");
+        builder.Property(w => w.GovernanceSuspendedReason).HasColumnName("governance_suspended_reason").HasMaxLength(50);
         builder.Property(w => w.DriftConfidenceThreshold)
             .HasColumnName("drift_confidence_threshold")
             .HasColumnType("numeric(4,2)")
-            .HasDefaultValue(0.75m);
+            .HasDefaultValue(0.75m)
+            // A change is saved only if the value is still the one it was based on, so two racing changes can't both win.
+            .IsConcurrencyToken();
 
         builder.Property(w => w.FirstLockedAt).HasColumnName("first_locked_at");
 

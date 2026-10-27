@@ -8,6 +8,7 @@ internal static class UniqueViolation
 {
     private const string SqlState = "23505";
     private const string SnapshotVersionIndex = "IX_mvp_snapshots_workspace_id_version";
+    public const string AuditSequenceIndex = "IX_audit_trail_workspace_id_sequence";
 
     public static bool Matches(DbUpdateException ex, string? constraintName = null) =>
         ex.InnerException is PostgresException { SqlState: SqlState } postgres

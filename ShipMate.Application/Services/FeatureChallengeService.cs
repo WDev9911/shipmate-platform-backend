@@ -5,6 +5,7 @@ using ShipMate.Application.DTOs.ProductDefinitions;
 using ShipMate.Application.Exceptions;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Application.Interfaces.Services;
+using ShipMate.Domain.Common;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
 using ShipMate.Domain.Policies;
@@ -19,6 +20,8 @@ public class FeatureChallengeService : IFeatureChallengeService
     private readonly IWorkspaceMemberRepository _workspaceMemberRepository;
     private readonly IWorkspaceAccessGuard _workspaceAccessGuard;
     private readonly IAiGateway _aiGateway;
+    private readonly IAuditTrail _auditTrail;
+    private readonly IWorkspaceNotifier _notifier;
     private readonly IMapper _mapper;
 
     public FeatureChallengeService(
@@ -28,6 +31,8 @@ public class FeatureChallengeService : IFeatureChallengeService
         IWorkspaceMemberRepository workspaceMemberRepository,
         IWorkspaceAccessGuard workspaceAccessGuard,
         IAiGateway aiGateway,
+        IAuditTrail auditTrail,
+        IWorkspaceNotifier notifier,
         IMapper mapper)
     {
         _challengeRepository = challengeRepository;
@@ -36,6 +41,8 @@ public class FeatureChallengeService : IFeatureChallengeService
         _workspaceMemberRepository = workspaceMemberRepository;
         _workspaceAccessGuard = workspaceAccessGuard;
         _aiGateway = aiGateway;
+        _auditTrail = auditTrail;
+        _notifier = notifier;
         _mapper = mapper;
     }
 
@@ -176,6 +183,20 @@ public class FeatureChallengeService : IFeatureChallengeService
         next.Hash = MvpSnapshotHasher.Compute(next);
         await _productDefinitionRepository.AddSnapshotAsync(next);
 
+        // Written in the same save as the new snapshot, so a scope change can't happen without its record.
+        await _auditTrail.AppendAsync(workspaceId, AuditTypes.ScopeChange, userId, new
+        {
+            challengeId = challenge.Id,
+            action = request.Action.ToString(),
+            featureId = challenge.FeatureId,
+            reason = challenge.Reason,
+            removedFeatureId = request.Action == ChallengeAction.RemoveAndReplace ? request.RemoveFeatureId : null,
+            replacementFeatureId = request.Action == ChallengeAction.RemoveAndReplace ? request.ReplacementFeatureId : null,
+            fromVersion = snapshot.Version,
+            toVersion = next.Version,
+            hash = next.Hash
+        });
+
         var now = DateTime.UtcNow;
         ReleaseReplacedAssignments(snapshot, next, assignments, now);
 
@@ -193,6 +214,11 @@ public class FeatureChallengeService : IFeatureChallengeService
         }
 
         await _challengeRepository.SaveChangesAsync();
+
+        if (request.Action == ChallengeAction.RemoveAndReplace)
+        {
+            await NotifyRemovalAsync(workspaceId, snapshot, request.RemoveFeatureId!.Value, assignments);
+        }
 
         return await ToDtoAsync(challenge, next);
     }
@@ -321,6 +347,22 @@ public class FeatureChallengeService : IFeatureChallengeService
         }
 
         return dto;
+    }
+
+    // Whoever held the removed feature, or one that depended on it, is told: their work just changed under them.
+    private async Task NotifyRemovalAsync(
+        Guid workspaceId, MvpSnapshot snapshot, Guid removedFeatureId, IReadOnlyList<FeatureAssignment> assignments)
+    {
+        var affected = MvpSnapshotEvolution.DependentsOf(snapshot, removedFeatureId).Append(removedFeatureId).ToHashSet();
+        var holders = assignments.Where(a => affected.Contains(a.FeatureId)).Select(a => a.AssignedUserId);
+
+        await _notifier.PublishToUsersAsync(holders, WorkspaceEvents.FeatureRemoved, new
+        {
+            workspaceId,
+            featureId = removedFeatureId,
+            featureName = snapshot.Features.First(f => f.FeatureId == removedFeatureId).Name,
+            dependentFeatureIds = affected.Where(id => id != removedFeatureId).ToList()
+        });
     }
 
     // A feature replaced by this approval is no longer held by anyone; its assignment stays as history.

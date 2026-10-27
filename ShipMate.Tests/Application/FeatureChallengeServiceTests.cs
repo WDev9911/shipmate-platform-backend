@@ -7,6 +7,7 @@ using ShipMate.Application.Exceptions;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Application.Interfaces.Services;
 using ShipMate.Application.Services;
+using ShipMate.Domain.Common;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
 
@@ -21,6 +22,9 @@ public class FeatureChallengeServiceTests
     private readonly IFeatureAssignmentRepository _assignments = Substitute.For<IFeatureAssignmentRepository>();
     private readonly IWorkspaceAccessGuard _guard = Substitute.For<IWorkspaceAccessGuard>();
     private readonly IAiGateway _ai = Substitute.For<IAiGateway>();
+    private readonly IWorkspaceNotifier _notifier = Substitute.For<IWorkspaceNotifier>();
+    private readonly InMemoryAuditTrailRepository _auditEntries = new();
+    private readonly AuditTrail _audit;
     private readonly FeatureChallengeService _service;
     private readonly Guid _manager = Guid.NewGuid();
     private readonly Guid _developer = Guid.NewGuid();
@@ -49,7 +53,8 @@ public class FeatureChallengeServiceTests
             };
         });
 
-        _service = new FeatureChallengeService(_challenges, _definitions, _assignments, _members, _guard, _ai, mapper);
+        _audit = new AuditTrail(_auditEntries);
+        _service = new FeatureChallengeService(_challenges, _definitions, _assignments, _members, _guard, _ai, _audit, _notifier, mapper);
 
         _snapshot = new MvpSnapshot { WorkspaceId = _workspaceId, Version = 1, DevCountAtLock = 1 };
         _snapshot.Features.Add(_a);
@@ -167,6 +172,80 @@ public class FeatureChallengeServiceTests
 
         await Assert.ThrowsAsync<NotFoundException>(() => _service.SubmitAsync(_developer, _workspaceId,
             new SubmitChallengeRequest { Name = "n", Description = "d", Reason = "r" }));
+    }
+
+    // ---- audit trail ----
+
+    [Fact]
+    public async Task Approve_WritesAScopeChangeRecordWithTheVersionsAndTheNewHash()
+    {
+        var challenge = OpenChallenge();
+
+        var next = await Approve(challenge, new ApproveChallengeRequest { Action = ChallengeAction.AddDirectly });
+
+        var record = Assert.Single(_auditEntries.Entries);
+        Assert.Equal(AuditTypes.ScopeChange, record.AuditType);
+        Assert.Equal(_workspaceId, record.WorkspaceId);
+        Assert.Equal(_manager, record.ActorUserId);
+        Assert.Contains(challenge.Id.ToString(), record.Payload);
+        Assert.Contains("\"action\":\"AddDirectly\"", record.Payload);
+        Assert.Contains("\"fromVersion\":1", record.Payload);
+        Assert.Contains($"\"toVersion\":{next.Version}", record.Payload);
+        Assert.Contains(next.Hash, record.Payload);
+    }
+
+    [Fact]
+    public async Task Reject_ChangesNoScopeAndWritesNoRecord()
+    {
+        var challenge = OpenChallenge();
+
+        await _service.RejectAsync(_manager, _workspaceId, challenge.Id, new RejectChallengeRequest());
+
+        Assert.Empty(_auditEntries.Entries);
+    }
+
+    // ---- real-time messages ----
+
+    private static FeatureAssignment HeldBy(SnapshotFeature feature, Guid user) => new()
+    {
+        FeatureId = feature.FeatureId,
+        AssignedUserId = user,
+        AssignedUser = new User { DisplayName = "dev" }
+    };
+
+    [Fact]
+    public async Task Approve_RemoveAndReplace_TellsTheHoldersOfTheRemovedAndTheDependentFeatures()
+    {
+        var holderOfRemoved = Guid.NewGuid();
+        var holderOfDependent = Guid.NewGuid();
+        var unrelated = Guid.NewGuid();
+        _snapshot.Dependencies.Add(new SnapshotDependency { FeatureId = _b.FeatureId, DependsOnFeatureId = _a.FeatureId });
+        _assignments.GetByWorkspaceIdAsync(_workspaceId).Returns(new List<FeatureAssignment>
+        {
+            HeldBy(_a, holderOfRemoved), HeldBy(_b, holderOfDependent), HeldBy(_committed, unrelated)
+        });
+        var challenge = OpenChallenge(complexity: 4);
+
+        await Approve(challenge, new ApproveChallengeRequest
+        {
+            Action = ChallengeAction.RemoveAndReplace,
+            RemoveFeatureId = _a.FeatureId,
+            DependentsResolution = RemovalDependentsResolution.RemoveDependents
+        });
+
+        await _notifier.Received(1).PublishToUsersAsync(
+            Arg.Is<IEnumerable<Guid>>(users => users.Order().SequenceEqual(new[] { holderOfRemoved, holderOfDependent }.Order())),
+            WorkspaceEvents.FeatureRemoved, Arg.Any<object>());
+    }
+
+    [Fact]
+    public async Task Approve_AddDirectly_SendsNoRemovalMessage()
+    {
+        var challenge = OpenChallenge();
+
+        await Approve(challenge, new ApproveChallengeRequest { Action = ChallengeAction.AddDirectly });
+
+        await _notifier.DidNotReceiveWithAnyArgs().PublishToUsersAsync(default!, default!, default!);
     }
 
     // ---- confirm complexity ----

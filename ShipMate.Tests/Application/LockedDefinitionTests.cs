@@ -105,8 +105,10 @@ public class LockedDefinitionTests
         Substitute.For<IUserRepository>(),
         Substitute.For<IGitHubConnectionRepository>(),
         Substitute.For<IGitHubOAuthService>(),
+        Substitute.For<IGitHubAppService>(),
         Substitute.For<IEncryptionService>(),
         Substitute.For<IEmailSender>(),
+        Substitute.For<IWorkspaceNotifier>(),
         Substitute.For<IMapper>());
 
     [Fact]

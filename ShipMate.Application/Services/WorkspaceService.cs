@@ -6,6 +6,7 @@ using ShipMate.Application.Interfaces.Services;
 using ShipMate.Application.Security;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
+using ShipMate.Domain.Policies;
 
 namespace ShipMate.Application.Services;
 
@@ -18,8 +19,10 @@ public class WorkspaceService : IWorkspaceService
     private readonly IUserRepository _userRepository;
     private readonly IGitHubConnectionRepository _gitHubConnectionRepository;
     private readonly IGitHubOAuthService _gitHubOAuthService;
+    private readonly IGitHubAppService _gitHubAppService;
     private readonly IEncryptionService _encryptionService;
     private readonly IEmailSender _emailSender;
+    private readonly IWorkspaceNotifier _notifier;
     private readonly IMapper _mapper;
 
     public WorkspaceService(
@@ -30,10 +33,13 @@ public class WorkspaceService : IWorkspaceService
         IUserRepository userRepository,
         IGitHubConnectionRepository gitHubConnectionRepository,
         IGitHubOAuthService gitHubOAuthService,
+        IGitHubAppService gitHubAppService,
         IEncryptionService encryptionService,
         IEmailSender emailSender,
+        IWorkspaceNotifier notifier,
         IMapper mapper)
     {
+        _notifier = notifier;
         _workspaceRepository = workspaceRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
         _workspaceAccessGuard = workspaceAccessGuard;
@@ -41,6 +47,7 @@ public class WorkspaceService : IWorkspaceService
         _userRepository = userRepository;
         _gitHubConnectionRepository = gitHubConnectionRepository;
         _gitHubOAuthService = gitHubOAuthService;
+        _gitHubAppService = gitHubAppService;
         _encryptionService = encryptionService;
         _emailSender = emailSender;
         _mapper = mapper;
@@ -237,6 +244,7 @@ public class WorkspaceService : IWorkspaceService
         _workspaceMemberRepository.Update(membership);
 
         await _workspaceRepository.SaveChangesAsync();
+        await NotifyBackupMatchesAsync(workspaceId, userId, request.SkillLevel);
 
         return _mapper.Map<WorkspaceMemberDto>(membership);
     }
@@ -276,8 +284,26 @@ public class WorkspaceService : IWorkspaceService
         _workspaceMemberRepository.Update(invitation);
 
         await _workspaceRepository.SaveChangesAsync();
+        await NotifyBackupMatchesAsync(workspaceId, userId, request.SkillLevel);
 
         return _mapper.Map<WorkspaceMemberDto>(invitation);
+    }
+
+    // A backup feature is waiting for someone skilled enough: tell the person whose skill just reached it.
+    // Nothing needs scanning in the background, since the open backup features are right there in the latest snapshot.
+    private async Task NotifyBackupMatchesAsync(Guid workspaceId, Guid userId, int skillLevel)
+    {
+        var snapshot = await _productDefinitionRepository.GetLatestSnapshotAsync(workspaceId);
+        var matches = snapshot?.Features
+            .Where(f => f.Status == SnapshotFeatureStatus.Backup && FeatureAssignmentPolicy.IsQualified(skillLevel, f.Complexity))
+            .Select(f => new { featureId = f.FeatureId, featureName = f.Name })
+            .ToList();
+        if (matches is not { Count: > 0 })
+        {
+            return;
+        }
+
+        await _notifier.PublishToUsersAsync([userId], WorkspaceEvents.BackupFeatureMatched, new { workspaceId, features = matches });
     }
 
     public async Task DeclineInvitationAsync(Guid userId, Guid workspaceId)
@@ -329,11 +355,20 @@ public class WorkspaceService : IWorkspaceService
             throw new GitHubRepoNotAccessibleException();
         }
 
+        // The Bot does all the writing on the repo, so the App must be installed there first.
+        var installation = await _gitHubAppService.FindInstallationAsync(request.Owner, request.Name)
+            ?? throw new GitHubAppNotInstalledException(_gitHubAppService.InstallUrl);
+
         workspace.GitHubRepoOwner = request.Owner;
         workspace.GitHubRepoName = request.Name;
+        workspace.GitHubInstallationId = installation.Id;
+        workspace.GitHubRepoIsOrganization = installation.IsOrganization;
 
-        // Webhook secret generated now, ready for BUILD to actually register the GitHub webhook
-        // and verify incoming signatures against — BUILD itself isn't built yet.
+        // Code reaches the default branch only through a pull request the Bot has put its check on.
+        workspace.GitHubMergeGateEnabled = await _gitHubAppService.EnsureMergeGateAsync(
+            installation.Id, installation.IsOrganization, request.Owner, request.Name);
+
+        // Webhook secret generated now, ready for a GitHub webhook to be registered and verified against.
         var (webhookSecretPlain, _) = SecureTokenGenerator.GenerateTokenPair();
         workspace.WebhookSecretEncrypted = _encryptionService.Encrypt(webhookSecretPlain);
 
@@ -351,6 +386,10 @@ public class WorkspaceService : IWorkspaceService
 
         workspace.GitHubRepoOwner = null;
         workspace.GitHubRepoName = null;
+        workspace.GitHubInstallationId = null;
+        workspace.GitHubRepoIsOrganization = false;
+        workspace.GitHubMergeGateEnabled = false;
+        workspace.LastAuditedMainSha = null;
         workspace.WebhookSecretEncrypted = null;
         workspace.UpdatedAt = DateTime.UtcNow;
         _workspaceRepository.Update(workspace);

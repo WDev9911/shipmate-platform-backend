@@ -18,9 +18,11 @@ Tài liệu này mô tả **phần LOCK đã cài đặt**. Nguyên văn spec LO
 | Feature Assignment (FCFS) và tạo nhánh GitHub thật | Xong | 5 |
 | Feature Challenge (thêm, backup, thay thế), giải phóng người giữ feature bị bỏ | Xong | 6 |
 | Kiểm tra lệch persona khi tái cấu trúc (chỉ cảnh báo) | Xong | 6 |
-| Branch Protection, SignalR, thông báo feature backup | Chưa làm | Chưa làm |
+| Branch Protection "chỉ Bot ghi" (làm trong BUILD GĐ 0, `03-build.md`) | Code xong, chưa chạy thử trên GitHub thật | Chưa làm |
+| SignalR, thông báo feature backup | Code xong trong BUILD GĐ 8 (`03-build.md`), đã thử Hub thật bằng máy chủ tối thiểu | Chưa làm |
 
 - Migration đã chạy vào DB dev: `AddLockFlow`, `LockFixesAndPersonaCheck`.
+- BUILD GĐ 3 đã thêm vào code LOCK: Lock lần đầu ghi `SNAPSHOT_LOCKED` và duyệt Feature Challenge ghi `SCOPE_CHANGE` vào bảng `audit_trail` (chuỗi hash), chung một lần lưu với thay đổi. Xem `03-build.md`.
 - Unit test: 359/359 đạt (gồm cả test mới cho phân tích AI của DEFINE và Auth). Chi tiết kịch bản ở `docs/lock-test-report.md` và `docs/unit-test-report.md`.
 - Đã kiểm tra tranh chấp đồng thời trên PostgreSQL thật: nhận cùng feature (FCFS) và Lock cùng lúc (`SNAPSHOT_VERSION_CONFLICT`). Xem `docs/lock-test-report.md` mục 7.6.
 - Đã chạy thử trên DB thật qua HTTP (2026-10-19): DEFINE → LOCK → Feature Challenge, và luồng team (mời dev, nhận lời mời kèm skill). Mọi bước đúng như thiết kế. Xem `docs/lock-test-report.md` mục 7.
@@ -127,7 +129,7 @@ Feature `replaced` vẫn nằm trong snapshot để lưu lịch sử nhưng khô
 
 ## Chưa làm
 
-- **Branch Protection "chỉ ShipMate Bot được ghi"** trên GitHub. Phần này cần một danh tính bot (GitHub App hoặc tài khoản bot) mà hiện chưa có. Nhóm cần quyết định, và nên làm chung với BUILD.
-- **Thông báo SignalR** cho dev của feature bị bỏ và của các feature phụ thuộc. Chưa có Hub; dùng chung với BUILD nên chờ thống nhất tên Hub và sự kiện.
-- **Thông báo khi có feature `backup` vừa với skill** của dev mới vào hoặc dev vừa sửa skill. Không cần job nền, vì màn hình nhận feature đã liệt kê sẵn feature backup kèm dev đủ skill. Chỉ còn thiếu phần thông báo, làm cùng SignalR.
+- **Branch Protection "chỉ ShipMate Bot được ghi"**: đã cài trong BUILD GĐ 0 (GitHub App `shipmate-bot-dev`). Bot tạo nhánh `feature/...` và khóa nó ngay khi dev nhận feature; repo cá nhân chỉ cấm được force push và xóa nhánh. Chưa kiểm chứng trên GitHub thật.
+- **Thông báo SignalR** cho dev của feature bị bỏ và của các feature phụ thuộc: đã làm trong BUILD GĐ 8 (sự kiện `FeatureRemoved`, Hub `/hubs/workspace`).
+- **Thông báo khi có feature `backup` vừa với skill** của dev mới vào hoặc dev vừa sửa skill. Không cần job nền, vì màn hình nhận feature đã liệt kê sẵn feature backup kèm dev đủ skill. Phần thông báo đã làm trong BUILD GĐ 8 (sự kiện `BackupFeatureMatched`, và `BackupFeatureClaimed` cho dev đang chờ feature đó).
 - **Rủi ro chấp nhận:** nếu dev nhận feature `backup` đúng lúc Manager duyệt một challenge khác, version mới có thể vẫn ghi feature đó là `backup`. Khoảng thời gian rất ngắn nên chưa xử lý.

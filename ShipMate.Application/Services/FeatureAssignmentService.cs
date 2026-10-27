@@ -14,26 +14,23 @@ public class FeatureAssignmentService : IFeatureAssignmentService
     private readonly IFeatureAssignmentRepository _assignmentRepository;
     private readonly IWorkspaceMemberRepository _workspaceMemberRepository;
     private readonly IWorkspaceAccessGuard _workspaceAccessGuard;
-    private readonly IGitHubOAuthService _gitHubService;
-    private readonly IGitHubConnectionRepository _gitHubConnectionRepository;
-    private readonly IEncryptionService _encryptionService;
+    private readonly IGitHubAppService _gitHubAppService;
+    private readonly IWorkspaceNotifier _notifier;
 
     public FeatureAssignmentService(
         IProductDefinitionRepository productDefinitionRepository,
         IFeatureAssignmentRepository assignmentRepository,
         IWorkspaceMemberRepository workspaceMemberRepository,
         IWorkspaceAccessGuard workspaceAccessGuard,
-        IGitHubOAuthService gitHubService,
-        IGitHubConnectionRepository gitHubConnectionRepository,
-        IEncryptionService encryptionService)
+        IGitHubAppService gitHubAppService,
+        IWorkspaceNotifier notifier)
     {
         _productDefinitionRepository = productDefinitionRepository;
         _assignmentRepository = assignmentRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
         _workspaceAccessGuard = workspaceAccessGuard;
-        _gitHubService = gitHubService;
-        _gitHubConnectionRepository = gitHubConnectionRepository;
-        _encryptionService = encryptionService;
+        _gitHubAppService = gitHubAppService;
+        _notifier = notifier;
     }
 
     public async Task<List<FeatureAssignmentOverviewDto>> GetOverviewAsync(Guid userId, Guid workspaceId)
@@ -126,12 +123,34 @@ public class FeatureAssignmentService : IFeatureAssignmentService
             {
                 await CreateBranchAsync(workspace, assignment);
             }
-            catch (AppException ex) when (ex is GitHubBranchCreationFailedException or GitHubNotConnectedException)
+            catch (AppException ex) when (ex is GitHubBranchCreationFailedException or GitHubAppUninstalledException)
             {
             }
         }
 
+        if (wasBackup)
+        {
+            await NotifyBackupClaimedAsync(workspaceId, snapshot, feature, userId);
+        }
+
         return ToDto(assignment);
+    }
+
+    // The backup feature is taken, so those whose own feature waited on it can move on.
+    private async Task NotifyBackupClaimedAsync(Guid workspaceId, MvpSnapshot snapshot, SnapshotFeature feature, Guid claimedBy)
+    {
+        var waiting = MvpSnapshotEvolution.DependentsOf(snapshot, feature.FeatureId).ToHashSet();
+        var holders = (await _assignmentRepository.GetByWorkspaceIdAsync(workspaceId))
+            .Where(a => a.ReleasedAt is null && waiting.Contains(a.FeatureId) && a.AssignedUserId != claimedBy)
+            .Select(a => a.AssignedUserId);
+
+        await _notifier.PublishToUsersAsync(holders, WorkspaceEvents.BackupFeatureClaimed, new
+        {
+            workspaceId,
+            featureId = feature.FeatureId,
+            featureName = feature.Name,
+            claimedBy
+        });
     }
 
     public async Task<FeatureAssignmentDto> RetryBranchAsync(Guid userId, Guid workspaceId, Guid featureId)
@@ -155,20 +174,22 @@ public class FeatureAssignmentService : IFeatureAssignmentService
         return ToDto(assignment);
     }
 
-    // Uses the token of the developer who took the feature: they are the one who will push to the branch.
+    // The Bot creates the branch and locks it right away, so the developer can only reach it through ShipMate.
+    // BranchCreatedAt is set only once both are done, so a retry repeats the whole step.
     private async Task CreateBranchAsync(Workspace workspace, FeatureAssignment assignment)
     {
-        var token = await GitHubAccessTokens.GetValidOrThrowAsync(
-            _gitHubConnectionRepository, _encryptionService, assignment.AssignedUserId);
-        await _gitHubService.CreateBranchFromDefaultAsync(
-            token, workspace.GitHubRepoOwner!, workspace.GitHubRepoName!, assignment.BranchName);
+        await _gitHubAppService.CreateProtectedBranchAsync(
+            workspace.GitHubInstallationId!.Value, workspace.GitHubRepoIsOrganization,
+            workspace.GitHubRepoOwner!, workspace.GitHubRepoName!, assignment.BranchName);
 
         assignment.BranchCreatedAt = DateTime.UtcNow;
         await _assignmentRepository.SaveChangesAsync();
     }
 
+    // A repo linked before the App existed has no installation; linking it again fills it in.
     private static bool HasLinkedRepo(Workspace workspace) =>
-        !string.IsNullOrEmpty(workspace.GitHubRepoOwner) && !string.IsNullOrEmpty(workspace.GitHubRepoName);
+        !string.IsNullOrEmpty(workspace.GitHubRepoOwner) && !string.IsNullOrEmpty(workspace.GitHubRepoName)
+        && workspace.GitHubInstallationId is not null;
 
     private static FeatureAssignmentDto ToDto(FeatureAssignment assignment) => new()
     {
