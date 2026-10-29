@@ -13,7 +13,7 @@ Tình trạng: nhánh `feature/build`, commit cuối `4143d61`. Cả 9 giai đo�
 
 ## 2. Việc đã hoãn, cần hỏi lại bạn
 
-- [ ] **Endpoint xem lịch sử đổi ngưỡng** (drift threshold). Đã hoãn ở GĐ 6, hẹn nhắc khi BUILD xong. Cần quyết định có thêm không. Ghi chú nằm ở mục 11 của `03-build.md`.
+- [x] **Endpoint xem lịch sử đổi ngưỡng** (drift threshold): đã làm 2026-10-29, `GET /api/workspaces/{id}/drift-threshold`. Chưa commit. Mô tả ở cuối mục GĐ 6 của `03-build.md`.
 - [ ] **Bỏ `UserRole.Manager`?** Giá trị này không dùng (Manager chỉ là vai trò theo từng workspace, `WorkspaceMemberRole`). Chưa quyết, không xóa khi chưa hỏi.
 - [ ] **`github_username` giả** trong DB dev (`test-freelancer`, `test-devtest`): chưa trả lời có đổi lại không.
 - [ ] **Màn hình "setup check"** (kiểm tra cài đặt App/repo): mình đã đề xuất, bạn chưa duyệt.

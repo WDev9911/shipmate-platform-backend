@@ -19,6 +19,13 @@ public class DriftThresholdController : ControllerBase
         _currentUserService = currentUserService;
     }
 
+    [HttpGet]
+    public async Task<IActionResult> Get(Guid workspaceId)
+    {
+        var result = await _driftThresholdService.GetAsync(_currentUserService.UserId!.Value, workspaceId);
+        return Ok(result);
+    }
+
     [HttpPut]
     public async Task<IActionResult> Change(Guid workspaceId, ChangeDriftThresholdRequest request)
     {

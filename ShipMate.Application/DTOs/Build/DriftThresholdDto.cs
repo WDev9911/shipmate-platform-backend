@@ -16,3 +16,18 @@ public class DriftThresholdDto
     // When the next change is allowed; null once no change is left.
     public DateTime? NextChangeAllowedAt { get; set; }
 }
+
+public class DriftThresholdHistoryDto : DriftThresholdDto
+{
+    // Oldest first.
+    public List<DriftThresholdChangeDto> History { get; set; } = [];
+}
+
+public class DriftThresholdChangeDto
+{
+    public int ChangeNumber { get; set; }
+    public decimal From { get; set; }
+    public decimal To { get; set; }
+    public Guid? ChangedByUserId { get; set; }
+    public DateTime ChangedAt { get; set; }
+}

@@ -11,4 +11,7 @@ public interface IDriftThresholdService
     /// and a lowering is marked as a governance dilution.
     /// </summary>
     Task<DriftThresholdDto> ChangeAsync(Guid userId, Guid workspaceId, ChangeDriftThresholdRequest request);
+
+    /// <summary>The current threshold, how many changes are left, when the next is allowed, and every change so far. Any active member.</summary>
+    Task<DriftThresholdHistoryDto> GetAsync(Guid userId, Guid workspaceId);
 }

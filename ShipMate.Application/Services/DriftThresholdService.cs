@@ -1,8 +1,10 @@
+using System.Text.Json;
 using ShipMate.Application.DTOs.Build;
 using ShipMate.Application.Exceptions;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Application.Interfaces.Services;
 using ShipMate.Domain.Common;
+using ShipMate.Domain.Entities;
 using ShipMate.Domain.Policies;
 
 namespace ShipMate.Application.Services;
@@ -24,6 +26,40 @@ public class DriftThresholdService : IDriftThresholdService
         _workspaceRepository = workspaceRepository;
         _auditTrailRepository = auditTrailRepository;
         _auditTrail = auditTrail;
+    }
+
+    public async Task<DriftThresholdHistoryDto> GetAsync(Guid userId, Guid workspaceId)
+    {
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
+
+        var entries = await _auditTrailRepository.GetByTypeAsync(workspaceId, AuditTypes.ThresholdChanged);
+        var now = DateTime.UtcNow;
+        var nextAllowed = DriftThresholdPolicy.NextAllowedChange(entries.Select(e => e.CreatedAt).ToList());
+
+        return new DriftThresholdHistoryDto
+        {
+            Value = workspace.DriftConfidenceThreshold,
+            ChangesUsed = entries.Count,
+            MaxChanges = DriftThresholdPolicy.MaxChanges,
+            // A date already past means a change is possible now.
+            NextChangeAllowedAt = entries.Count >= DriftThresholdPolicy.MaxChanges ? null : DateTime.Compare(nextAllowed, now) > 0 ? nextAllowed : now,
+            History = entries.Select(ToChange).ToList()
+        };
+    }
+
+    private static DriftThresholdChangeDto ToChange(AuditTrailEntry entry)
+    {
+        using var payload = JsonDocument.Parse(entry.Payload);
+        var root = payload.RootElement;
+
+        return new DriftThresholdChangeDto
+        {
+            ChangeNumber = root.GetProperty("changeNumber").GetInt32(),
+            From = root.GetProperty("from").GetDecimal(),
+            To = root.GetProperty("to").GetDecimal(),
+            ChangedByUserId = entry.ActorUserId,
+            ChangedAt = entry.CreatedAt
+        };
     }
 
     public async Task<DriftThresholdDto> ChangeAsync(Guid userId, Guid workspaceId, ChangeDriftThresholdRequest request)

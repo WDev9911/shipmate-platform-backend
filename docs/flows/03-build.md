@@ -278,9 +278,9 @@ Thứ tự kiểm tra: ngoài khoảng, giống giá trị cũ, hết 3 lượt,
 - Mã `THRESHOLD_UNCHANGED` và `THRESHOLD_CHANGE_CONFLICT` là mã **thêm mới**, không có trong bảng mã lỗi bản nháp.
 - Một cập nhật khác lên cùng workspace (ví dụ gỡ cờ Governance Suspended) mà trùng thời điểm với một lần đổi ngưỡng cũng sẽ bị coi là thua tranh chấp. Rất hiếm.
 
-**Để sau (đã ghi nhớ):** endpoint xem lịch sử đổi ngưỡng. Bạn đã chọn để sau; sẽ nhắc lại khi xong GĐ 8 (xem mục 11).
+**Endpoint xem lịch sử (thêm 2026-10-29):** `GET /api/workspaces/{id}/drift-threshold`, mọi thành viên active gọi được (người ngoài nhận `NOT_FOUND`). Trả `{ value, changesUsed, maxChanges, nextChangeAllowedAt, history: [{ changeNumber, from, to, changedByUserId, changedAt }] }`, `history` cũ nhất trước. `nextChangeAllowedAt` là `null` khi hết lượt; chưa đổi lần nào hoặc đã qua 7 ngày thì bằng thời điểm gọi (đổi được ngay). Đọc từ các bản ghi `THRESHOLD_CHANGED` trong AuditTrail, không cần migration. Chỉ trả `changedByUserId`, không kèm tên: frontend lấy tên từ danh sách thành viên.
 
-**Thay đổi cho frontend:** màn hình chỉnh ngưỡng chỉ cho Manager; hiển thị `changesUsed/maxChanges` và `nextChangeAllowedAt` từ phản hồi của lần đổi gần nhất (chưa có endpoint đọc riêng; `WorkspaceDto.driftConfidenceThreshold` cho giá trị hiện tại); xử lý các mã lỗi ở bảng trên.
+**Thay đổi cho frontend:** màn hình chỉnh ngưỡng chỉ cho Manager; hiển thị `changesUsed/maxChanges`, `nextChangeAllowedAt` và lịch sử từ `GET .../drift-threshold`; xử lý các mã lỗi ở bảng trên.
 
 **Kiểm thử:** 637/637 đạt (thêm 39 so với GĐ 5). Mới: `DriftThresholdPolicyTests` (khoảng, biên 7 ngày, tính từ lần gần nhất, nâng và hạ dùng chung lượt, đủ 3 lần), `DriftThresholdServiceTests` (đổi thành công, hạ ghi thêm Dilution, nâng không ghi, chỉ đếm `THRESHOLD_CHANGED`, lần thứ 3 hết lượt, từ chối thì không đổi gì và không ghi vết, không phải Manager), `ChangeDriftThresholdRequestValidatorTests`.
 **Đã thử trên PostgreSQL thật** (DB tạm `shipmate_threshold_race`, đã xóa sau khi chạy, không đụng DB dev): hai Manager đổi ngưỡng cùng lúc (0.80 và 0.70), cả hai đã đọc giá trị cũ trước khi lưu. **Lần chạy đầu cả hai cùng thành công**, vì chưa bật khóa lạc quan: lỗi thật mà unit test không thấy. Sau khi bật, 3 lần chạy liên tiếp: một bên thành công, bên kia nhận `THRESHOLD_CHANGE_CONFLICT`, DB chỉ có đúng 1 bản ghi `THRESHOLD_CHANGED`, chuỗi hash liền. Đổi lần hai ngay sau đó bị `THRESHOLD_CHANGE_COOLDOWN`. **Chưa kiểm chứng:** gọi qua HTTP với app thật.
@@ -793,7 +793,7 @@ Mọi lỗi theo định dạng chung (`CONTRIBUTING.md` mục 9).
 - Tính điểm: việc của SHIP.
 - Quét lại PR khi được mở (cần webhook và URL public).
 - Trạng thái feature `deferred`: spec liệt kê nhưng LOCK chưa định nghĩa.
-- Endpoint xem lịch sử đổi ngưỡng (ai đổi, từ bao nhiêu sang bao nhiêu, khi nào, còn mấy lượt, khi nào được đổi tiếp). Bạn đã chọn để sau (2026-10-23); dữ liệu có sẵn trong AuditTrail. **Nhắc lại sau khi xong GĐ 8.**
+- ~~Endpoint xem lịch sử đổi ngưỡng~~: đã làm (2026-10-29), xem cuối mục GĐ 6.
 
 ## 12. Việc cần trao đổi với thành viên khác
 

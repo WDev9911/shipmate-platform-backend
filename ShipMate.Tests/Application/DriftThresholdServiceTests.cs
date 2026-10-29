@@ -111,6 +111,95 @@ public class DriftThresholdServiceTests
         Assert.Equal(1, result.ChangesUsed);
     }
 
+    // ---- reading ----
+
+    private async Task GivenRecordedChange(int number, decimal from, decimal to, DateTime at, Guid by)
+    {
+        await new AuditTrail(_auditEntries).AppendAsync(
+            _workspace.Id, AuditTypes.ThresholdChanged, by, new { from, to, changeNumber = number });
+        _auditEntries.Entries[^1].CreatedAt = at;
+    }
+
+    [Fact]
+    public async Task ReadingBeforeAnyChange_ShowsTheValueAndAllChangesLeft()
+    {
+        _guard.GetWorkspaceAsMemberAsync(_developer, _workspace.Id).Returns(_workspace);
+
+        var result = await _service.GetAsync(_developer, _workspace.Id);
+
+        Assert.Equal(0.75m, result.Value);
+        Assert.Equal(0, result.ChangesUsed);
+        Assert.Equal(3, result.MaxChanges);
+        Assert.NotNull(result.NextChangeAllowedAt);
+        Assert.True(result.NextChangeAllowedAt <= DateTime.UtcNow);
+        Assert.Empty(result.History);
+    }
+
+    [Fact]
+    public async Task Reading_ListsEveryChangeOldestFirst_WithWhoAndWhen()
+    {
+        _guard.GetWorkspaceAsMemberAsync(_developer, _workspace.Id).Returns(_workspace);
+        var first = DateTime.UtcNow.AddDays(-20);
+        var second = DateTime.UtcNow.AddDays(-10);
+        await GivenRecordedChange(1, 0.75m, 0.80m, first, _manager);
+        await GivenRecordedChange(2, 0.80m, 0.70m, second, _manager);
+
+        var result = await _service.GetAsync(_developer, _workspace.Id);
+
+        Assert.Equal(2, result.ChangesUsed);
+        Assert.Collection(result.History,
+            c =>
+            {
+                Assert.Equal(1, c.ChangeNumber);
+                Assert.Equal(0.75m, c.From);
+                Assert.Equal(0.80m, c.To);
+                Assert.Equal(_manager, c.ChangedByUserId);
+                Assert.Equal(first, c.ChangedAt);
+            },
+            c =>
+            {
+                Assert.Equal(2, c.ChangeNumber);
+                Assert.Equal(0.80m, c.From);
+                Assert.Equal(0.70m, c.To);
+                Assert.Equal(second, c.ChangedAt);
+            });
+    }
+
+    [Fact]
+    public async Task Reading_WithinTheWait_ShowsTheDateTheNextChangeBecomesPossible()
+    {
+        _guard.GetWorkspaceAsMemberAsync(_manager, _workspace.Id).Returns(_workspace);
+        var last = DateTime.UtcNow.AddDays(-2);
+        await GivenRecordedChange(1, 0.75m, 0.80m, last, _manager);
+
+        var result = await _service.GetAsync(_manager, _workspace.Id);
+
+        Assert.Equal(last.AddDays(7), result.NextChangeAllowedAt);
+    }
+
+    [Fact]
+    public async Task Reading_WhenNoChangeIsLeft_HasNoNextDate()
+    {
+        _guard.GetWorkspaceAsMemberAsync(_manager, _workspace.Id).Returns(_workspace);
+        await GivenRecordedChange(1, 0.75m, 0.80m, DateTime.UtcNow.AddDays(-30), _manager);
+        await GivenRecordedChange(2, 0.80m, 0.70m, DateTime.UtcNow.AddDays(-20), _manager);
+        await GivenRecordedChange(3, 0.70m, 0.85m, DateTime.UtcNow.AddDays(-10), _manager);
+
+        var result = await _service.GetAsync(_manager, _workspace.Id);
+
+        Assert.Equal(3, result.ChangesUsed);
+        Assert.Null(result.NextChangeAllowedAt);
+    }
+
+    [Fact]
+    public async Task Reading_ByANonMember_IsRefused()
+    {
+        _guard.GetWorkspaceAsMemberAsync(_developer, _workspace.Id)
+            .Returns<Workspace>(_ => throw new NotFoundException("Workspace", _workspace.Id));
+
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.GetAsync(_developer, _workspace.Id));
+    }
+
     // ---- refused ----
 
     private async Task AssertRefusedAndNothingChanged<T>(decimal value, int recordsBefore = 0) where T : Exception
