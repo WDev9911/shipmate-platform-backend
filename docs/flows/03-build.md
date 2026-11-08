@@ -107,7 +107,7 @@ Kiểm tra theo thứ tự (dừng ở lỗi đầu tiên):
 | Trạng thái | Ý nghĩa |
 |---|---|
 | `in_scope` | `confidenceScore` ≥ ngưỡng của workspace: code nằm trong scope; có `suggestions` (gợi ý tinh gọn) |
-| `drift` | `confidenceScore` < ngưỡng: có `findings` (file và mô tả phần ngoài scope) và `suspectedFeatureIds` |
+| `drift` | `confidenceScore` < ngưỡng, **hoặc** AI nêu ít nhất một `findings` (file và mô tả phần ngoài scope) dù điểm cao (luật R1, đã cài 2026-11-08; xem `03-build-chua-lam.md` mục 3.9), kèm `suspectedFeatureIds` |
 | `skipped_maintenance` | Rule Engine bỏ qua AI; lặp lại kết quả lần trước, `carriedFromSubmissionId` trỏ về lần đó |
 | `superseded` | Có lần submit mới hơn của cùng feature thay thế |
 | `failed` | Không ra được kết quả; `failureCode` cho biết lý do |
@@ -194,7 +194,7 @@ Mỗi bản ghi nằm **chung một lần lưu** với thay đổi mà nó mô t
 | Có submission mới hơn của feature, hoặc submission này đã `superseded` | `SUBMISSION_SUPERSEDED` |
 | Đang `analyzing`, `failed`, hoặc đã `approved` rồi | `SUBMISSION_NOT_READY` |
 | Feature còn cảnh báo `unresolved` hoặc `acknowledged` ("Đã xem" không mở khóa) | `DRIFT_UNRESOLVED` |
-| Điểm thấp hơn ngưỡng mà cảnh báo mới nhất của feature chưa `overridden` | `DRIFT_UNRESOLVED` |
+| Điểm thấp hơn ngưỡng **hoặc có `findings`**, mà cảnh báo mới nhất của feature chưa `overridden` | `DRIFT_UNRESOLVED` |
 | `commitSha` khác đầu của submission mà không nằm trong các commit nhánh `feature/...` chưa có | `COMMIT_NOT_IN_SUBMISSION` (400) |
 | GitHub từ chối vì lệch lịch sử (không fast-forward được) hoặc không còn commit | `FAST_FORWARD_FAILED` (409): rebase rồi submit lại |
 
@@ -369,6 +369,15 @@ Gộp xong hai thông báo LOCK còn nợ (`FeatureRemoved`, `BackupFeatureMatch
 
 **File chính:** `ShipMate.API/Hubs/WorkspaceHub.cs`, `Hubs/SignalRWorkspaceNotifier.cs`, `Program.cs` (SignalR, đọc token từ query, `MapHub`), `Application/Interfaces/Services/IWorkspaceNotifier.cs` (giao diện và tên sự kiện); các điểm phát tin: `BuildAnalysisService`, `DriftAlertService`, `BuildApprovalService`, `FeatureChallengeService`, `FeatureAssignmentService`, `WorkspaceService`. Không có migration.
 
+### Đã làm thêm: setup check (2026-10-29)
+
+`GET /api/workspaces/{id}/setup`, **chỉ Manager**. Chỉ đọc dữ liệu đã lưu, **không gọi GitHub**. Trả `{ ready, repoLinked, appInstalled, mergeGateEnabled, repoIsOrganization, governanceSuspended, membersWithoutSkill[], membersWithoutGitHub[] }` (hai danh sách là `userId` của thành viên `active`).
+
+- `ready = true` khi: đã liên kết repo, App đã cài, merge gate bật, không bị Governance Suspended, mọi thành viên active đã khai skill và đã kết nối GitHub (kết nối bị thu hồi thì tính là chưa kết nối).
+- `repoIsOrganization` **không chặn** `ready`: repo cá nhân chỉ khóa yếu hơn, frontend hiện cảnh báo.
+- Không kiểm tra "App còn được cài" theo thời gian thực; Governance Suspended chỉ bật khi một lần gọi GitHub phát hiện App bị gỡ.
+- Kiểm thử: 11 unit test giả lập (`WorkspaceSetupServiceTests`), 702/702 đạt. Chưa chạy qua HTTP.
+
 ## 2. Quyết định
 
 ### Đã chốt
@@ -433,7 +442,7 @@ CLI gọi API ShipMate: "đã submit commit abc123"
        Lớp 1 Rule Engine: chỉ là bảo trì? ── đúng → bỏ qua AI, giữ kết quả cũ
        Lớp 2 AI: so diff với snapshot mới nhất → confidence_score
    │
-   ├── điểm < ngưỡng ──► [GĐ 3] DRIFT: cảnh báo đỏ, khóa nút duyệt
+   ├── điểm < ngưỡng, hoặc có findings ──► [GĐ 3] DRIFT: cảnh báo đỏ, khóa nút duyệt
    │                     Dev: sửa code rồi submit lại, hoặc gửi Feature Challenge (LOCK)
    │                     Manager: Override (ghi SCOPE_BYPASS vào AuditTrail)
    │
@@ -610,7 +619,7 @@ Chỉ thêm những gì các GĐ thật sự dùng.
   - Phần diff của chúng chỉ là whitespace, dòng comment, hoặc file `.gitignore`, `README*`, `LICENSE*`, `docs/**`.
 - Kết quả: `SkippedMaintenance`, giữ nguyên kết quả và alert của lần trước. Không bao giờ dùng để đóng alert.
 
-**Lớp 2 — AI** (một lần gọi qua `IAiGateway`, log vào `ai_analysis_runs`):
+**Lớp 2 — AI** (một lần gọi qua `IAiGateway`; kết quả lưu trên chính `build_submissions`: `ai_model`, `ai_raw_response`, không dùng `ai_analysis_runs`):
 - Đầu vào: feature của dev (tên, mô tả, scope); danh sách feature khác trong snapshot (id, tên, mô tả, trạng thái); dependency; diff.
 - Đầu ra (JSON Schema):
   ```json
@@ -780,7 +789,7 @@ Mọi lỗi theo định dạng chung (`CONTRIBUTING.md` mục 9).
 | Giới hạn | Cách bù |
 |---|---|
 | **Repo cá nhân không khóa cứng được** ("chỉ App được push" chỉ có trên repo của Organization), và chủ repo luôn tự tắt được luật | Phát hiện push lén vào `feature/...` và `main`, ghi `DIRECT_PUSH_DETECTED` vào AuditTrail; Check Run vẫn hiện ✅/❌ làm bằng chứng; khuyến nghị đặt repo trong Organization (freelancer: Organization của khách) |
-| **Owner/admin Organization vượt được luật** | Bật "áp dụng cả cho admin" khi tạo luật; hành vi vượt luật vẫn bị phát hiện ở GĐ 5 |
+| **Owner/admin Organization vượt được luật** (đã khắc phục cho nhánh feature, 2026-11-08) | Nhánh `feature/**` khóa bằng GitHub Rulesets, chỉ bot được bypass, nên admin cũng bị chặn (đã thử thật). Nhánh `main` dùng branch protection với `enforce_admins` và check bắt buộc, cũng chặn được admin. Chi tiết: `03-build-chua-lam.md` mục 3.4 |
 | **Repo private trên gói Free không bật được luật bảo vệ** (cần xác minh khi làm GĐ 0) | Cảnh báo khi liên kết repo; vẫn có phát hiện push lén |
 | **Người có quyền vào thẳng DB có thể tính lại cả chuỗi hash** | Ship Card công khai và giữ hash tại thời điểm mint, nên ghi đè sau đó vẫn bị phát hiện khi đối chiếu |
 | **Chạy nhiều instance server** | Đúng nhờ trạng thái `Superseded` trong DB; chỉ không hủy được AI đang chạy ở instance khác |

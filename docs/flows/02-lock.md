@@ -32,7 +32,7 @@ Tài liệu này mô tả **phần LOCK đã cài đặt**. Nguyên văn spec LO
 ## 1. Skill Profile
 
 - Mỗi `WorkspaceMember` có `SkillLevel` (1–5, `null` nếu chưa khai báo), **gắn theo từng workspace**.
-- **Khai khi vào workspace (just-in-time):** chấp nhận lời mời `POST /api/workspaces/{id}/members/accept` **bắt buộc** gửi `{ "skillLevel": 1..5 }`. Thành viên mới vì vậy không bao giờ ở trạng thái chưa khai. **Thay đổi API:** trước đây endpoint này không có body; frontend phải gửi thêm `skillLevel`.
+- **Khai khi vào workspace (just-in-time):** chấp nhận lời mời `POST /api/workspaces/{id}/members/accept` **bắt buộc** gửi `{ "skillLevel": 1..5 }`. Thành viên mới vì vậy không bao giờ ở trạng thái chưa khai. **Thay đổi API:** trước đây endpoint này không có body; frontend phải gửi thêm `skillLevel`. **Từ 2026-11-07** Accept còn yêu cầu đã kết nối GitHub (`GITHUB_REQUIRED_TO_JOIN`, 400) vì thành viên được tự mời vào repo; xem `03-build-chua-lam.md` mục 3.3.
 - Sửa lại bất cứ lúc nào: `PUT /api/workspaces/{id}/members/me/skill` với `{ "skillLevel": 1..5 }`. Chỉ thành viên `active`, chỉ sửa skill của chính mình.
 - Manager tạo workspace không qua lời mời nên khai bằng API sửa ở trên; Lock bị chặn tới khi Manager khai.
 - Giới hạn đã biết của spec: skill là tự khai báo, không có cách xác minh.
