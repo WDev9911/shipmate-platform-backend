@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using ShipMate.Application.Exceptions;
 
 namespace ShipMate.API.Middlewares;
@@ -27,7 +28,15 @@ public class GlobalExceptionHandler : IExceptionHandler
     {
         var (statusCode, title, detail) = MapException(exception);
 
-        _logger.LogError(exception, "Unhandled exception occurred: {Message}", exception.Message);
+        // A refusal the code meant to give (not found, conflict, bad input) is not a fault: no stack trace, no error level.
+        if (exception is AppException or ValidationException or NotFoundException)
+        {
+            _logger.LogInformation("Request refused with {StatusCode}: {Message}", statusCode, exception.Message);
+        }
+        else
+        {
+            _logger.LogError(exception, "Unhandled exception occurred: {Message}", exception.Message);
+        }
 
         var problemDetails = new ProblemDetails
         {
@@ -77,7 +86,7 @@ public class GlobalExceptionHandler : IExceptionHandler
     private static (int StatusCode, string Title, string Detail) MapException(Exception exception) => exception switch
     {
         NotFoundException e => (StatusCodes.Status404NotFound, "Resource not found", e.Message),
-        AppException e => (e.StatusCode, "Bad request", e.Message),
+        AppException e => (e.StatusCode, e.StatusCode == StatusCodes.Status400BadRequest ? "Bad request" : ReasonPhrases.GetReasonPhrase(e.StatusCode), e.Message),
         // Per-field messages are in "errors"; e.Message repeats them in one hard-to-read string.
         ValidationException => (StatusCodes.Status400BadRequest, ValidationTitle, ValidationDetail),
         _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred",

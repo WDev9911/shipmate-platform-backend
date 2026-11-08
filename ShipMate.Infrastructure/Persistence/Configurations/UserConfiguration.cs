@@ -10,7 +10,6 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
     private static readonly Dictionary<UserRole, string> RoleToDb = new()
     {
         [UserRole.Developer] = "developer",
-        [UserRole.Manager] = "manager",
         [UserRole.Administrator] = "admin"
     };
 

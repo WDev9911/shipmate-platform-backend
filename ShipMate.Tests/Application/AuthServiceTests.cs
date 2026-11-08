@@ -43,6 +43,7 @@ public class AuthServiceTests
         _jwt.GenerateAccessToken(Arg.Any<User>()).Returns(("access-token", DateTime.UtcNow.AddMinutes(30)));
         _refreshTokens.AddAsync(Arg.Do<RefreshToken>(t => _issuedRefreshTokens.Add(t)));
         _emails.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Do<string>(body => _lastEmailBody = body));
+        _emails.TrySendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Do<string>(body => _lastEmailBody = body)).Returns(true);
         _encryption.Encrypt(Arg.Any<string>()).Returns(call => $"enc:{call.Arg<string>()}");
         var configuration = Substitute.For<IConfiguration>();
         configuration["RefreshToken:ExpiryDays"].Returns("14");
@@ -90,6 +91,19 @@ public class AuthServiceTests
         Assert.Equal(SecureTokenGenerator.Hash(CodeInLastEmail()), token.TokenHash);
         Assert.InRange(token.ExpiresAt, DateTime.UtcNow.AddMinutes(14), DateTime.UtcNow.AddMinutes(16));
         await _emails.Received(1).SendAsync(Email, Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    // Resend refuses an address (422), is down, or times out: the account and its code are already saved.
+    [Fact]
+    public async Task Register_WhenTheVerificationEmailCannotBeSent_KeepsTheAccountAndSaysSo()
+    {
+        _emails.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(Task.FromException(new HttpRequestException("422")));
+
+        await Assert.ThrowsAsync<EmailDeliveryFailedException>(() =>
+            _service.RegisterAsync(new RegisterRequest { Email = Email, Password = Password, DisplayName = "Dev" }));
+
+        await _users.Received(1).AddAsync(Arg.Is<User>(u => u.Email == Email));
+        await _users.Received(1).SaveChangesAsync();
     }
 
     [Fact]
@@ -153,6 +167,16 @@ public class AuthServiceTests
         await _verificationTokens.Received(1).InvalidateAllUnusedForUserAsync(user.Id);
         await _verificationTokens.Received(1).AddAsync(Arg.Is<EmailVerificationToken>(t =>
             t.TokenHash == SecureTokenGenerator.Hash(CodeInLastEmail())));
+    }
+
+    [Fact]
+    public async Task ResendVerification_WhenTheEmailCannotBeSent_SaysSo()
+    {
+        ExistingUser(verified: false);
+        _emails.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(Task.FromException(new HttpRequestException("422")));
+
+        await Assert.ThrowsAsync<EmailDeliveryFailedException>(() =>
+            _service.ResendVerificationAsync(new ResendVerificationRequest { Email = Email }));
     }
 
     [Theory]
@@ -322,6 +346,16 @@ public class AuthServiceTests
             t.TokenHash == SecureTokenGenerator.Hash(CodeInLastEmail())));
     }
 
+    // A visible failure would tell a stranger that this email has an account.
+    [Fact]
+    public async Task ForgotPassword_WhenTheEmailCannotBeSent_StaysSilentLikeAnUnknownAccount()
+    {
+        ExistingUser();
+        _emails.TrySendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(false);
+
+        await _service.ForgotPasswordAsync(new ForgotPasswordRequest { Email = Email });
+    }
+
     [Fact]
     public async Task VerifyResetCode_RightCode_ReturnsATicketWithoutUsingTheCode()
     {
@@ -421,7 +455,7 @@ public class AuthServiceTests
 
         Assert.Equal("gh-1", user.GitHubId);
         await _users.DidNotReceive().AddAsync(Arg.Any<User>());
-        await _emails.Received(1).SendAsync(Email, "Your GitHub account has been linked", Arg.Any<string>());
+        await _emails.Received(1).TrySendAsync(Email, "Your GitHub account has been linked", Arg.Any<string>());
     }
 
     [Fact]
@@ -472,7 +506,7 @@ public class AuthServiceTests
     {
         var user = ExistingUser();
         user.GitHubId = "gh-1";
-        _workspaces.HasManagedWorkspaceWithLinkedGitHubRepoAsync(user.Id).Returns(true);
+        _workspaces.IsActiveMemberOfAnyWorkspaceAsync(user.Id).Returns(true);
 
         await Assert.ThrowsAsync<GitHubDisconnectBlockedByLinkedWorkspacesException>(() => _service.DisconnectGitHubAsync(user.Id));
 

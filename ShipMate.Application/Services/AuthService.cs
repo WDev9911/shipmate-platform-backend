@@ -87,7 +87,7 @@ public class AuthService : IAuthService
 
         await _userRepository.SaveChangesAsync();
 
-        await _emailSender.SendAsync(
+        await SendVerificationEmailAsync(
             user.Email,
             "Verify your ShipMate account",
             $"""
@@ -96,6 +96,20 @@ public class AuthService : IAuthService
              <h2>{code}</h2>
              <p>This code expires in 15 minutes.</p>
              """);
+    }
+
+    // The account and its code are already saved when this runs, so a failed send says so instead of surfacing as a 500:
+    // the user asks for a new code. (Forgot-password swallows the failure instead, to not reveal whether the account exists.)
+    private async Task SendVerificationEmailAsync(string toEmail, string subject, string htmlBody)
+    {
+        try
+        {
+            await _emailSender.SendAsync(toEmail, subject, htmlBody);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new EmailDeliveryFailedException();
+        }
     }
 
     public async Task<AuthResponse> VerifyEmailAsync(VerifyEmailRequest request)
@@ -146,7 +160,7 @@ public class AuthService : IAuthService
 
         await _userRepository.SaveChangesAsync();
 
-        await _emailSender.SendAsync(
+        await SendVerificationEmailAsync(
             user.Email,
             "Verify your ShipMate account",
             $"""
@@ -227,7 +241,7 @@ public class AuthService : IAuthService
                 _userRepository.Update(existingByEmail);
                 user = existingByEmail;
 
-                await _emailSender.SendAsync(
+                await _emailSender.TrySendAsync(
                     user.Email,
                     "Your GitHub account has been linked",
                     $"""
@@ -282,7 +296,7 @@ public class AuthService : IAuthService
         await UpsertGitHubConnectionAsync(userId, githubToken);
         await _userRepository.SaveChangesAsync();
 
-        await _emailSender.SendAsync(
+        await _emailSender.TrySendAsync(
             user.Email,
             "Your GitHub account has been linked",
             $"""
@@ -302,7 +316,7 @@ public class AuthService : IAuthService
             throw new GitHubDisconnectRequiresPasswordException();
         }
 
-        if (await _workspaceRepository.HasManagedWorkspaceWithLinkedGitHubRepoAsync(userId))
+        if (await _workspaceRepository.IsActiveMemberOfAnyWorkspaceAsync(userId))
         {
             throw new GitHubDisconnectBlockedByLinkedWorkspacesException();
         }
@@ -420,7 +434,7 @@ public class AuthService : IAuthService
         await _passwordResetTokenRepository.AddAsync(resetToken);
         await _userRepository.SaveChangesAsync();
 
-        await _emailSender.SendAsync(
+        await _emailSender.TrySendAsync(
             user.Email,
             "Reset your ShipMate password",
             $"""
