@@ -118,7 +118,11 @@ public class BuildAnalysisService : IBuildAnalysisService
         var maxDiffCharacters = int.TryParse(_configuration["Build:MaxDiffCharacters"], out var configured)
             ? configured
             : DefaultMaxDiffCharacters;
-        if (comparison.Truncated || comparison.Files.Sum(f => f.Patch?.Length ?? 0) > maxDiffCharacters)
+        // A file with changes but no patch is one GitHub found too large to show: leaving it out of the sum would let the
+        // biggest changes through, and the AI would be asked about a file it can't read.
+        if (comparison.Truncated
+            || comparison.Files.Any(f => f.Patch is null && f.Changes > 0)
+            || comparison.Files.Sum(f => f.Patch?.Length ?? 0) > maxDiffCharacters)
         {
             await FinishAsync(submission, BuildSubmissionStatus.Failed, "DIFF_TOO_LARGE");
             return;
@@ -157,9 +161,7 @@ public class BuildAnalysisService : IBuildAnalysisService
         submission.FindingsJson = JsonSerializer.Serialize(output.Findings, AiJson.Options);
         submission.SuggestionsJson = JsonSerializer.Serialize(output.Suggestions, AiJson.Options);
 
-        var status = output.ConfidenceScore < workspace.DriftConfidenceThreshold
-            ? BuildSubmissionStatus.Drift
-            : BuildSubmissionStatus.InScope;
+        var status = submission.ExceedsScope ? BuildSubmissionStatus.Drift : BuildSubmissionStatus.InScope;
         await FinishAsync(submission, status, failureCode: null);
     }
 
@@ -304,7 +306,8 @@ public class BuildAnalysisService : IBuildAnalysisService
                 submissionId = raised.SubmissionId,
                 confidenceScore = raised.ConfidenceScore,
                 thresholdAtCheck = raised.ThresholdAtCheck,
-                suspectedFeatureIds = raised.SuspectedFeatureIds
+                suspectedFeatureIds = raised.SuspectedFeatureIds,
+                trigger = DriftTriggerPolicy.Of(raised.ConfidenceScore, raised.ThresholdAtCheck, submission.HasFindings).ToString()
             });
         }
 

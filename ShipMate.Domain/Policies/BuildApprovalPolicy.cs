@@ -41,8 +41,7 @@ public static class BuildApprovalPolicy
 
         // A verdict below the threshold needs a Manager's override. Maintenance-only submissions repeat the earlier
         // verdict, so the alert that stopped that one is the one that must have been overridden.
-        var isDrift = submission.ConfidenceScore < submission.ThresholdAtCheck;
-        if (isDrift && latestAlertStatus != DriftAlertStatus.Overridden)
+        if (submission.ExceedsScope && latestAlertStatus != DriftAlertStatus.Overridden)
         {
             return ApprovalReadiness.DriftUnresolved;
         }

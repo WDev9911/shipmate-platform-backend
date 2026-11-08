@@ -125,6 +125,46 @@ public class BuildAnalysisServiceTests
         Assert.Contains("Builds payments", _submission.FindingsJson);
     }
 
+    // The AI's own contract is "findings stay empty when everything is inside the scope": a finding next to a high score
+    // is the score being generous, and the code is still beyond the lock.
+    [Theory]
+    [InlineData(0.92)]
+    [InlineData(0.85)]
+    [InlineData(0.75)]
+    public async Task AFinding_MakesItDrift_EvenWhenTheScoreIsAboveTheThreshold(double score)
+    {
+        GivenAiAnswers((decimal)score, withFinding: true);
+
+        await Analyze();
+
+        Assert.Equal(BuildSubmissionStatus.Drift, _submission.Status);
+        Assert.Equal((decimal)score, _submission.ConfidenceScore);
+        Assert.Contains("Builds payments", _submission.FindingsJson);
+        await _alerts.Received(1).AddAsync(Arg.Is<DriftAlert>(a => a.ConfidenceScore == (decimal)score && a.ThresholdAtCheck == 0.75m));
+    }
+
+    [Fact]
+    public async Task NoFinding_AndAScoreAboveTheThreshold_StaysInScope()
+    {
+        GivenAiAnswers(0.85m);
+
+        await Analyze();
+
+        Assert.Equal(BuildSubmissionStatus.InScope, _submission.Status);
+        await _alerts.DidNotReceive().AddAsync(Arg.Any<DriftAlert>());
+    }
+
+    [Fact]
+    public async Task ADriftBecauseOfAFinding_IsAnnouncedWithItsReason()
+    {
+        GivenAiAnswers(0.85m, withFinding: true);
+
+        await Analyze();
+
+        await _notifier.Received(1).PublishAsync(_workspace.Id, WorkspaceEvents.DriftAlertTriggered,
+            Arg.Is<object>(p => p.ToString()!.Contains("trigger = Findings")));
+    }
+
     [Theory]
     [InlineData(0.75, BuildSubmissionStatus.InScope)]
     [InlineData(0.74, BuildSubmissionStatus.Drift)]
@@ -361,6 +401,30 @@ public class BuildAnalysisServiceTests
         Assert.Equal(BuildSubmissionStatus.Failed, _submission.Status);
         Assert.Equal("DIFF_TOO_LARGE", _submission.FailureCode);
         await _ai.DidNotReceiveWithAnyArgs().GenerateJsonAsync(default!, default);
+    }
+
+    // GitHub leaves the patch out of a file whose diff it finds too large to show.
+    [Fact]
+    public async Task AFileWhosePatchGitHubLeftOut_FailsAsTooLarge_AndTheAiIsNotAskedAboutIt()
+    {
+        GivenDiffAgainstMain(new ChangedFile("big-data.js", "added", null, Changes: 2501), new ChangedFile("a.ts", "added", "small"));
+
+        await Analyze();
+
+        Assert.Equal(BuildSubmissionStatus.Failed, _submission.Status);
+        Assert.Equal("DIFF_TOO_LARGE", _submission.FailureCode);
+        await _ai.DidNotReceiveWithAnyArgs().GenerateJsonAsync(default!, default);
+    }
+
+    // A binary file has no patch and no changed lines: it was always left out and still is.
+    [Fact]
+    public async Task ABinaryFileWithoutAPatch_IsNotMistakenForALargeDiff()
+    {
+        GivenDiffAgainstMain(new ChangedFile("logo.png", "added", null, Changes: 0));
+
+        await Analyze();
+
+        Assert.NotEqual("DIFF_TOO_LARGE", _submission.FailureCode);
     }
 
     [Fact]

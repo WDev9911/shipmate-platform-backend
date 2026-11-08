@@ -264,6 +264,46 @@ public class BuildApprovalServiceTests
         await AssertRefused<DriftUnresolvedException>(() => Approve());
     }
 
+    // A maintenance-only submission repeats the earlier verdict, findings included: a high score does not hide them.
+    [Fact]
+    public async Task AMaintenanceOnlySubmission_CarryingFindingsWithAHighScore_NeedsTheOverrideToo()
+    {
+        _submission.Status = BuildSubmissionStatus.SkippedMaintenance;
+        _submission.ConfidenceScore = 0.9m;
+        _submission.FindingsJson = """[{"file":"src/ads/banner.js","description":"Third-party ads"}]""";
+        _alerts.GetLatestByFeatureAsync(_workspace.Id, _feature.FeatureId)
+            .Returns(new DriftAlert { Status = DriftAlertStatus.Resolved });
+
+        await AssertRefused<DriftUnresolvedException>(() => Approve());
+    }
+
+    [Fact]
+    public async Task AMaintenanceOnlySubmission_CarryingFindingsTheManagerOverrode_CanBeApproved()
+    {
+        _submission.Status = BuildSubmissionStatus.SkippedMaintenance;
+        _submission.ConfidenceScore = 0.9m;
+        _submission.FindingsJson = """[{"file":"src/ads/banner.js","description":"Third-party ads"}]""";
+        _alerts.GetLatestByFeatureAsync(_workspace.Id, _feature.FeatureId)
+            .Returns(new DriftAlert { Status = DriftAlertStatus.Overridden });
+
+        await Approve();
+
+        await _app.Received(1).CreateScopeCheckRunAsync(
+            4242, "clinic", "booking", Head, Arg.Any<string>(), Arg.Is<string>(s => s.Contains("overrode")));
+    }
+
+    [Fact]
+    public async Task AMaintenanceOnlySubmission_CarryingFindingsAsAnEmptyList_IsNotMistakenForADrift()
+    {
+        _submission.Status = BuildSubmissionStatus.SkippedMaintenance;
+        _submission.ConfidenceScore = 0.9m;
+        _submission.FindingsJson = "[]";
+
+        await Approve();
+
+        Assert.Equal(BuildSubmissionStatus.Approved, _submission.Status);
+    }
+
     [Fact]
     public async Task AMaintenanceOnlySubmission_CarryingADriftVerdict_NeedsTheOverrideToo()
     {

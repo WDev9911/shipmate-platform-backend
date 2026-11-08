@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ShipMate.Domain.Common;
 using ShipMate.Domain.Enums;
 
@@ -30,6 +31,28 @@ public class BuildSubmission : BaseEntity
     public string? FindingsJson { get; set; }
     public string? SuggestionsJson { get; set; }
     public Guid? CarriedFromSubmissionId { get; set; }
+
+    /// <summary>The AI listed at least one piece of code outside the feature.</summary>
+    public bool HasFindings
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(FindingsJson))
+            {
+                return false;
+            }
+
+            using var document = JsonDocument.Parse(FindingsJson);
+            return document.RootElement.ValueKind == JsonValueKind.Array && document.RootElement.GetArrayLength() > 0;
+        }
+    }
+
+    /// <summary>
+    /// The one rule for "beyond the locked scope": the score is under the threshold, or the AI named code outside the
+    /// feature. Its prompt says findings stay empty when everything is inside, so a finding next to a high score is the
+    /// score being too generous, not a reason to let the code through.
+    /// </summary>
+    public bool ExceedsScope => ConfidenceScore < ThresholdAtCheck || HasFindings;
     public DateTime? AnalyzedAt { get; set; }
 
     // For a Failed submission, e.g. DIFF_TOO_LARGE or AI_RATE_LIMITED.

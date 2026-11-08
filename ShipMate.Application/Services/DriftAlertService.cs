@@ -1,3 +1,4 @@
+using ShipMate.Application.Ai.Build;
 using ShipMate.Application.DTOs.Build;
 using ShipMate.Application.Exceptions;
 using ShipMate.Application.Interfaces.Repositories;
@@ -5,6 +6,7 @@ using ShipMate.Application.Interfaces.Services;
 using ShipMate.Domain.Common;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
+using ShipMate.Domain.Policies;
 
 namespace ShipMate.Application.Services;
 
@@ -120,6 +122,10 @@ public class DriftAlertService : IDriftAlertService
         await _alertRepository.GetByIdAsync(workspaceId, alertId)
             ?? throw new NotFoundException("Drift alert", alertId);
 
+    // The findings belong to the submission that raised the alert, which never changes.
+    private static List<BuildFinding> FindingsOf(DriftAlert alert) =>
+        alert.Submission is null ? [] : BuildSubmissionDto.From(alert.Submission).Findings;
+
     private static DriftAlertDto ToDto(DriftAlert alert) => new()
     {
         Id = alert.Id,
@@ -129,6 +135,8 @@ public class DriftAlertService : IDriftAlertService
         ThresholdAtCheck = alert.ThresholdAtCheck,
         ConfidenceScore = alert.ConfidenceScore,
         SuspectedFeatureIds = alert.SuspectedFeatureIds,
+        Trigger = DriftTriggerPolicy.Of(alert.ConfidenceScore, alert.ThresholdAtCheck, FindingsOf(alert).Count > 0),
+        Findings = FindingsOf(alert),
         Status = alert.Status,
         AcknowledgedAt = alert.AcknowledgedAt,
         AcknowledgedByUserId = alert.AcknowledgedByUserId,

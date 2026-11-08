@@ -1,3 +1,4 @@
+using ShipMate.Application.Ai.Build;
 using ShipMate.Domain.Enums;
 
 namespace ShipMate.Application.DTOs.Build;
@@ -13,6 +14,10 @@ public class DriftAlertDto
     public decimal ThresholdAtCheck { get; set; }
     public decimal ConfidenceScore { get; set; }
     public List<Guid> SuspectedFeatureIds { get; set; } = new();
+
+    // Why it was raised, and the code outside the feature the AI named (empty when the score alone was too low).
+    public DriftTrigger Trigger { get; set; }
+    public List<BuildFinding> Findings { get; set; } = new();
 
     public DriftAlertStatus Status { get; set; }
 

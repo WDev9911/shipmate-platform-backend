@@ -18,10 +18,11 @@ public class DriftAlertRepository : IDriftAlertRepository
         await _context.DriftAlerts.AddAsync(alert);
 
     public async Task<DriftAlert?> GetByIdAsync(Guid workspaceId, Guid alertId) =>
-        await _context.DriftAlerts.FirstOrDefaultAsync(a => a.WorkspaceId == workspaceId && a.Id == alertId);
+        await _context.DriftAlerts.Include(a => a.Submission).FirstOrDefaultAsync(a => a.WorkspaceId == workspaceId && a.Id == alertId);
 
     public async Task<List<DriftAlert>> GetByWorkspaceIdAsync(Guid workspaceId, DriftAlertStatus? status) =>
         await _context.DriftAlerts
+            .Include(a => a.Submission)
             .Where(a => a.WorkspaceId == workspaceId && (status == null || a.Status == status))
             .OrderByDescending(a => a.CreatedAt)
             .ToListAsync();

@@ -169,7 +169,7 @@ public class BuildApprovalService : IBuildApprovalService
 
     private static string DescribeCheck(BuildSubmission submission, SnapshotFeature feature)
     {
-        var verdict = submission.ConfidenceScore < submission.ThresholdAtCheck
+        var verdict = submission.ExceedsScope
             ? "The code went beyond the locked scope; a Manager overrode the alert."
             : "The code stays inside the locked scope.";
 

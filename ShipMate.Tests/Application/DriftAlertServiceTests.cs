@@ -25,6 +25,28 @@ public class DriftAlertServiceTests
     private readonly Guid _developer = Guid.NewGuid();
     private readonly DriftAlert _alert;
 
+    private static BuildSubmission SubmissionWithFindings(string findingsJson) => new() { FindingsJson = findingsJson };
+
+    [Theory]
+    [InlineData(0.85, """[{"file":"src/ads/banner.js","description":"Third-party ads"}]""", DriftTrigger.Findings)]
+    [InlineData(0.40, """[{"file":"src/ads/banner.js","description":"Third-party ads"}]""", DriftTrigger.Both)]
+    [InlineData(0.40, "[]", DriftTrigger.LowConfidence)]
+    public async Task TheAlertSaysWhyItWasRaised_AndWhichCodeTheAiNamed(double score, string findings, DriftTrigger expected)
+    {
+        _alert.ConfidenceScore = (decimal)score;
+        _alert.Submission = SubmissionWithFindings(findings);
+        _alerts.GetByWorkspaceIdAsync(_workspaceId, null).Returns(new List<DriftAlert> { _alert });
+
+        var dto = (await _service.GetAllAsync(_manager, _workspaceId, null)).Single();
+
+        Assert.Equal(expected, dto.Trigger);
+        Assert.Equal(findings == "[]" ? 0 : 1, dto.Findings.Count);
+        if (findings != "[]")
+        {
+            Assert.Equal("src/ads/banner.js", dto.Findings[0].File);
+        }
+    }
+
     public DriftAlertServiceTests()
     {
         _service = new DriftAlertService(_guard, _alerts, _assignments, _members, new AuditTrail(_auditEntries), _notifier);
