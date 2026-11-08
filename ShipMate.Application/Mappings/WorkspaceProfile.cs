@@ -12,7 +12,8 @@ public class WorkspaceProfile : Profile
 
         CreateMap<WorkspaceMember, WorkspaceMemberDto>()
             .ForMember(dest => dest.Email, opt => opt.MapFrom(src => src.User.Email))
-            .ForMember(dest => dest.DisplayName, opt => opt.MapFrom(src => src.User.DisplayName));
+            .ForMember(dest => dest.DisplayName, opt => opt.MapFrom(src => src.User.DisplayName))
+            .ForMember(dest => dest.RepoInvite, opt => opt.Ignore());
 
         CreateMap<WorkspaceMember, WorkspaceInvitationDto>()
             .ForMember(dest => dest.WorkspaceName, opt => opt.MapFrom(src => src.Workspace.Name))

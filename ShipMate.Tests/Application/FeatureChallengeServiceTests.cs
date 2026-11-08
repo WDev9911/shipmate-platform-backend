@@ -23,6 +23,7 @@ public class FeatureChallengeServiceTests
     private readonly IWorkspaceAccessGuard _guard = Substitute.For<IWorkspaceAccessGuard>();
     private readonly IAiGateway _ai = Substitute.For<IAiGateway>();
     private readonly IWorkspaceNotifier _notifier = Substitute.For<IWorkspaceNotifier>();
+    private readonly IGitHubAppService _gitHub = Substitute.For<IGitHubAppService>();
     private readonly InMemoryAuditTrailRepository _auditEntries = new();
     private readonly AuditTrail _audit;
     private readonly FeatureChallengeService _service;
@@ -54,7 +55,7 @@ public class FeatureChallengeServiceTests
         });
 
         _audit = new AuditTrail(_auditEntries);
-        _service = new FeatureChallengeService(_challenges, _definitions, _assignments, _members, _guard, _ai, _audit, _notifier, mapper);
+        _service = new FeatureChallengeService(_challenges, _definitions, _assignments, _members, _guard, _ai, _audit, _notifier, _gitHub, mapper);
 
         _snapshot = new MvpSnapshot { WorkspaceId = _workspaceId, Version = 1, DevCountAtLock = 1 };
         _snapshot.Features.Add(_a);
@@ -236,6 +237,71 @@ public class FeatureChallengeServiceTests
         await _notifier.Received(1).PublishToUsersAsync(
             Arg.Is<IEnumerable<Guid>>(users => users.Order().SequenceEqual(new[] { holderOfRemoved, holderOfDependent }.Order())),
             WorkspaceEvents.FeatureRemoved, Arg.Any<object>());
+    }
+
+    // ---- the branch of a replaced feature ----
+
+    private void GivenARepoAndAHeldBranch(out FeatureAssignment held)
+    {
+        _guard.GetWorkspaceAsManagerAsync(_manager, _workspaceId).Returns(new Workspace
+        {
+            GitHubRepoOwner = "clinic", GitHubRepoName = "booking", GitHubInstallationId = 42
+        });
+        held = HeldBy(_a, Guid.NewGuid());
+        held.BranchName = "feature/a-dev";
+        held.BranchCreatedAt = DateTime.UtcNow;
+        _assignments.GetByWorkspaceIdAsync(_workspaceId).Returns(new List<FeatureAssignment> { held });
+    }
+
+    private Task<MvpSnapshot> ReplaceA() => Approve(OpenChallenge(complexity: 4), new ApproveChallengeRequest
+    {
+        Action = ChallengeAction.RemoveAndReplace,
+        RemoveFeatureId = _a.FeatureId
+    });
+
+    [Fact]
+    public async Task Approve_RemoveAndReplace_DeletesTheBranchOfTheFeatureThatWasReplaced()
+    {
+        GivenARepoAndAHeldBranch(out var held);
+
+        await ReplaceA();
+
+        Assert.NotNull(held.ReleasedAt);
+        await _gitHub.Received(1).DeleteBranchAsync(42, "clinic", "booking", "feature/a-dev");
+    }
+
+    [Fact]
+    public async Task Approve_RemoveAndReplace_WhenTheBranchWasNeverCreated_DeletesNothing()
+    {
+        GivenARepoAndAHeldBranch(out var held);
+        held.BranchCreatedAt = null;
+
+        await ReplaceA();
+
+        await _gitHub.DidNotReceiveWithAnyArgs().DeleteBranchAsync(default, default!, default!, default!);
+    }
+
+    [Fact]
+    public async Task Approve_RemoveAndReplace_WhenGitHubFails_StillApprovesAndLeavesARecord()
+    {
+        GivenARepoAndAHeldBranch(out var held);
+        _gitHub.DeleteBranchAsync(42, "clinic", "booking", "feature/a-dev")
+            .Returns(Task.FromException(new GitHubRequestFailedException()));
+
+        var next = await ReplaceA();
+
+        Assert.Equal(SnapshotFeatureStatus.Replaced, next.Features.Single(f => f.FeatureId == _a.FeatureId).Status);
+        Assert.Contains(_auditEntries.Entries, e => e.AuditType == AuditTypes.RepoBranchCleanupFailed);
+    }
+
+    [Fact]
+    public async Task Approve_RemoveAndReplace_WithoutALinkedRepo_NeverCallsGitHub()
+    {
+        _assignments.GetByWorkspaceIdAsync(_workspaceId).Returns(new List<FeatureAssignment> { HeldBy(_a, Guid.NewGuid()) });
+
+        await ReplaceA();
+
+        await _gitHub.DidNotReceiveWithAnyArgs().DeleteBranchAsync(default, default!, default!, default!);
     }
 
     [Fact]

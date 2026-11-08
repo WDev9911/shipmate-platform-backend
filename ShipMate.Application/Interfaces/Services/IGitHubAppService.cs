@@ -42,7 +42,9 @@ public interface IGitHubAppService
     Task<GitHubComparison?> CompareAsync(long installationId, string owner, string repo, string baseRef, string headSha);
 
     /// <summary>
-    /// Creates the branch from the head of the default branch and protects it so only the Bot can write to it.
+    /// Creates the branch from the head of the default branch and locks it so only the Bot can write to it, admins and
+    /// owners included: one ruleset covers every feature branch. A repository that can't have rulesets falls back to a
+    /// protection rule on the branch, which an admin can still walk around.
     /// Safe to repeat; throws GitHubBranchCreationFailedException when GitHub refuses.
     /// </summary>
     Task CreateProtectedBranchAsync(
@@ -54,8 +56,19 @@ public interface IGitHubAppService
     /// </summary>
     Task<bool> FastForwardBranchAsync(long installationId, string owner, string repo, string branchName, string sha);
 
-    /// <summary>Deletes the branch. A branch that is already gone is fine.</summary>
+    /// <summary>Deletes the branch, lifting an old per-branch protection rule first if that is what holds it. A branch that is already gone is fine.</summary>
     Task DeleteBranchAsync(long installationId, string owner, string repo, string branchName);
+
+    /// <summary>
+    /// Takes away what ShipMate put on the repository: the feature-branch ruleset, and the required "ShipMate Scope Check"
+    /// on the default branch (nobody reports it any more, so it would block every merge). Rules that belong to the
+    /// owner stay. Quietly does nothing when the repository or the App installation is already gone.
+    /// Throws GitHubRequestFailedException on any other failure.
+    /// </summary>
+    Task RemoveRepoLockAsync(long installationId, string owner, string repo);
+
+    /// <summary>False when the repository has no commits yet: there is no default branch to protect.</summary>
+    Task<bool> RepoHasCommitsAsync(long installationId, string owner, string repo);
 
     /// <summary>
     /// Makes merging into the default branch require the "ShipMate Scope Check" from this App, keeping every other
@@ -71,6 +84,20 @@ public interface IGitHubAppService
 
     /// <summary>Whether the commit carries a successful "ShipMate Scope Check" made by this App.</summary>
     Task<bool> HasPassingScopeCheckAsync(long installationId, string owner, string repo, string headSha);
+
+    /// <summary>
+    /// Gives a GitHub user write access to the repository: an invitation for someone new, nothing for someone who already
+    /// has access. Returns true when an invitation was sent, false when the user already had access.
+    /// Throws GitHubRequestFailedException when GitHub refuses (unknown user, App without the permission) or fails.
+    /// </summary>
+    Task<bool> InviteCollaboratorAsync(long installationId, string owner, string repo, string username);
+
+    /// <summary>
+    /// Takes a GitHub user's access to the repository away, and cancels an invitation they have not accepted yet. Safe to
+    /// repeat. Quietly does nothing when the repository or the App installation no longer exists: there is nothing left
+    /// to take. Throws GitHubRequestFailedException on any other failure, since the access may still be there.
+    /// </summary>
+    Task RemoveCollaboratorAsync(long installationId, string owner, string repo, string username);
 
     /// <summary>The merged pull requests a commit of the default branch came in through.</summary>
     Task<IReadOnlyList<GitHubPullRequestRef>> GetMergedPullRequestsOfCommitAsync(

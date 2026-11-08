@@ -51,19 +51,22 @@ public class GitHubAppService : IGitHubAppService
     {
         try
         {
-            var token = await GetInstallationTokenAsync(installationId);
             var url = $"{RepoUrl(owner, repo)}/git/ref/heads/{EscapePath(branchName)}";
+            var token = await GetInstallationTokenAsync(installationId);
             var response = await _httpClient.SendAsync(CreateRequest(HttpMethod.Get, url, token));
+
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                // The cached token no longer works (an uninstalled App takes its tokens with it): ask GitHub for a new one.
+                // If the App is gone, that is where it says so, instead of this call failing once before it does.
+                _cache.Remove(TokenCacheKey(installationId));
+                token = await GetInstallationTokenAsync(installationId);
+                response = await _httpClient.SendAsync(CreateRequest(HttpMethod.Get, url, token));
+            }
 
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 return null;
-            }
-
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
-            {
-                // The cached token no longer works; drop it so the next call asks GitHub for a new one.
-                _cache.Remove(TokenCacheKey(installationId));
             }
 
             response.EnsureSuccessStatusCode();
@@ -121,7 +124,7 @@ public class GitHubAppService : IGitHubAppService
 
                 messages.AddRange(payload.Commits.Select(c => c.Commit.Message));
                 shas.AddRange(payload.Commits.Select(c => c.Sha));
-                files.AddRange(payload.Files.Select(f => new ChangedFile(f.Filename, f.Status, f.Patch)));
+                files.AddRange(payload.Files.Select(f => new ChangedFile(f.Filename, f.Status, f.Patch, f.Changes)));
 
                 if (payload.Commits.Count < pageSize && payload.Files.Count < pageSize)
                 {
@@ -152,6 +155,9 @@ public class GitHubAppService : IGitHubAppService
             var head = await GetAsync<GitHubRefPayload>(
                 $"{repoUrl}/git/ref/heads/{EscapePath(repository.DefaultBranch)}", token);
 
+            // The lock is in place before the branch exists, so there is no moment when it is open.
+            var lockedByRuleset = await EnsureFeatureLockRulesetAsync(repoUrl, token);
+
             var create = CreateRequest(HttpMethod.Post, $"{repoUrl}/git/refs", token);
             create.Content = JsonContent.Create(new { @ref = $"refs/heads/{branchName}", sha = head.Object.Sha });
             var created = await _httpClient.SendAsync(create);
@@ -162,7 +168,10 @@ public class GitHubAppService : IGitHubAppService
                 throw new GitHubBranchCreationFailedException();
             }
 
-            await ProtectBranchAsync(repoUrl, token, isOrganization, branchName);
+            if (!lockedByRuleset)
+            {
+                await ProtectBranchAsync(repoUrl, token, isOrganization, branchName);
+            }
         }
         catch (HttpRequestException)
         {
@@ -200,13 +209,50 @@ public class GitHubAppService : IGitHubAppService
         try
         {
             var token = await GetInstallationTokenAsync(installationId);
-            var response = await _httpClient.SendAsync(
-                CreateRequest(HttpMethod.Delete, $"{RepoUrl(owner, repo)}/git/refs/heads/{EscapePath(branchName)}", token));
+            var repoUrl = RepoUrl(owner, repo);
+            var refUrl = $"{repoUrl}/git/refs/heads/{EscapePath(branchName)}";
+            var response = await _httpClient.SendAsync(CreateRequest(HttpMethod.Delete, refUrl, token));
+
+            // 422: a branch locked by an old per-branch protection rule (made before the ruleset) can't be deleted until
+            // that rule is lifted. The ruleset lets the Bot through, so it never gets here.
+            if (response.StatusCode == HttpStatusCode.UnprocessableEntity)
+            {
+                var lifted = await _httpClient.SendAsync(
+                    CreateRequest(HttpMethod.Delete, $"{repoUrl}/branches/{EscapePath(branchName)}/protection", token));
+                if (lifted.IsSuccessStatusCode)
+                {
+                    response = await _httpClient.SendAsync(CreateRequest(HttpMethod.Delete, refUrl, token));
+                }
+            }
 
             if (response.StatusCode is not (HttpStatusCode.NotFound or HttpStatusCode.UnprocessableEntity))
             {
                 response.EnsureSuccessStatusCode();
             }
+        }
+        catch (HttpRequestException)
+        {
+            throw new GitHubRequestFailedException();
+        }
+    }
+
+    public async Task<bool> RepoHasCommitsAsync(long installationId, string owner, string repo)
+    {
+        try
+        {
+            var token = await GetInstallationTokenAsync(installationId);
+            var response = await _httpClient.SendAsync(
+                CreateRequest(HttpMethod.Get, $"{RepoUrl(owner, repo)}/commits?per_page=1", token));
+
+            // 409 is GitHub's "Git Repository is empty".
+            if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                return false;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var commits = await response.Content.ReadFromJsonAsync<List<GitHubCompareCommitPayload>>();
+            return commits is { Count: > 0 };
         }
         catch (HttpRequestException)
         {
@@ -225,6 +271,12 @@ public class GitHubAppService : IGitHubAppService
             var ours = new Dictionary<string, object?> { ["context"] = GitHubScopeCheck.Name, ["app_id"] = AppId() };
 
             var existing = await _httpClient.SendAsync(CreateRequest(HttpMethod.Get, protectionUrl, token));
+
+            // A private repo on a free plan can't be protected, and says so already when asked about its rules.
+            if (await IsPlanLimitAsync(existing))
+            {
+                return false;
+            }
 
             HttpResponseMessage result;
             if (existing.StatusCode == HttpStatusCode.NotFound)
@@ -327,6 +379,60 @@ public class GitHubAppService : IGitHubAppService
         }
     }
 
+    public async Task<bool> InviteCollaboratorAsync(long installationId, string owner, string repo, string username)
+    {
+        try
+        {
+            var token = await GetInstallationTokenAsync(installationId);
+            var request = CreateRequest(
+                HttpMethod.Put, $"{RepoUrl(owner, repo)}/collaborators/{Uri.EscapeDataString(username)}", token);
+            request.Content = JsonContent.Create(new { permission = "push" });
+
+            // 201: invitation sent. 204: already has access.
+            var response = await _httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            return response.StatusCode == HttpStatusCode.Created;
+        }
+        catch (HttpRequestException)
+        {
+            throw new GitHubRequestFailedException();
+        }
+    }
+
+    public async Task RemoveCollaboratorAsync(long installationId, string owner, string repo, string username)
+    {
+        try
+        {
+            var token = await GetInstallationTokenAsync(installationId);
+            var repoUrl = RepoUrl(owner, repo);
+
+            // 204 whether or not the user was a collaborator, so repeating it is harmless.
+            var removal = CreateRequest(HttpMethod.Delete, $"{repoUrl}/collaborators/{Uri.EscapeDataString(username)}", token);
+            (await _httpClient.SendAsync(removal)).EnsureSuccessStatusCode();
+
+            // Removing the collaborator leaves an invitation they have not accepted yet standing: cancel it on its own.
+            var invitations = await GetAsync<List<GitHubRepoInvitationPayload>>($"{repoUrl}/invitations?per_page=100", token);
+            foreach (var invitation in invitations.Where(i =>
+                         string.Equals(i.Invitee?.Login, username, StringComparison.OrdinalIgnoreCase)))
+            {
+                var cancel = CreateRequest(HttpMethod.Delete, $"{repoUrl}/invitations/{invitation.Id}", token);
+                (await _httpClient.SendAsync(cancel)).EnsureSuccessStatusCode();
+            }
+        }
+        catch (GitHubAppUninstalledException)
+        {
+            // The App is gone from the repository, so there is no access left that ShipMate could take away.
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
+        {
+            // The repository itself is gone.
+        }
+        catch (HttpRequestException)
+        {
+            throw new GitHubRequestFailedException();
+        }
+    }
+
     public async Task<IReadOnlyList<GitHubPullRequestRef>> GetMergedPullRequestsOfCommitAsync(
         long installationId, string owner, string repo, string commitSha)
     {
@@ -346,7 +452,134 @@ public class GitHubAppService : IGitHubAppService
 
     private long AppId() => long.Parse(_configuration["GitHubApp:AppId"]!);
 
-    // Only the Bot may push, nobody may force-push or delete, and admins are held to the same rule.
+    public async Task RemoveRepoLockAsync(long installationId, string owner, string repo)
+    {
+        try
+        {
+            var token = await GetInstallationTokenAsync(installationId);
+            var repoUrl = RepoUrl(owner, repo);
+
+            foreach (var ruleset in await FindFeatureLockRulesetsAsync(repoUrl, token))
+            {
+                var removal = await _httpClient.SendAsync(
+                    CreateRequest(HttpMethod.Delete, $"{repoUrl}/rulesets/{ruleset.Id}", token));
+                if (removal.StatusCode != HttpStatusCode.NotFound)
+                {
+                    removal.EnsureSuccessStatusCode();
+                }
+            }
+
+            var repository = await GetAsync<GitHubRepoPayload>(repoUrl, token);
+            var protectionUrl = $"{repoUrl}/branches/{EscapePath(repository.DefaultBranch)}/protection";
+            var existing = await _httpClient.SendAsync(CreateRequest(HttpMethod.Get, protectionUrl, token));
+            // No protection to take our check off: none set, or a plan that has none.
+            if (existing.StatusCode == HttpStatusCode.NotFound || await IsPlanLimitAsync(existing))
+            {
+                return;
+            }
+
+            existing.EnsureSuccessStatusCode();
+            var current = (await existing.Content.ReadFromJsonAsync<GitHubBranchProtectionPayload>())?.RequiredStatusChecks;
+            if (current is null || !current.Checks.Any(IsOurCheck))
+            {
+                return;
+            }
+
+            // Only our check goes; any other check the owner requires stays.
+            var others = current.Checks
+                .Where(c => !IsOurCheck(c))
+                .Select(c => c.AppId is null
+                    ? new Dictionary<string, object?> { ["context"] = c.Context }
+                    : new Dictionary<string, object?> { ["context"] = c.Context, ["app_id"] = c.AppId })
+                .ToList();
+
+            // The list is emptied, never the whole setting: a branch protected without status checks can't get the gate
+            // back later without rewriting every other rule (see EnsureMergeGateAsync), so linking again would find it shut.
+            var request = CreateRequest(HttpMethod.Patch, $"{protectionUrl}/required_status_checks", token);
+            request.Content = JsonContent.Create(new { strict = current.Strict, checks = others });
+
+            (await _httpClient.SendAsync(request)).EnsureSuccessStatusCode();
+        }
+        catch (GitHubAppUninstalledException)
+        {
+            // The App is gone from the repository, so there is nothing left that ShipMate could take off.
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
+        {
+            // The repository itself is gone.
+        }
+        catch (HttpRequestException)
+        {
+            throw new GitHubRequestFailedException();
+        }
+    }
+
+    // GitHub answers 403 "Upgrade to GitHub Pro or make this repository public" for branch rules on a private repo of a free
+    // plan. Any other 403 is a real refusal and is not mistaken for it.
+    private static async Task<bool> IsPlanLimitAsync(HttpResponseMessage response) =>
+        response.StatusCode == HttpStatusCode.Forbidden
+        && (await response.Content.ReadAsStringAsync()).Contains("Upgrade to GitHub", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsOurCheck(GitHubRequiredCheckPayload check) =>
+        check.Context == GitHubScopeCheck.Name && check.AppId == AppId();
+
+    private const string FeatureLockRulesetName = "ShipMate feature branch lock";
+
+    // One ruleset locks every feature/** branch for everyone but the Bot, admins and owners included (a protection rule
+    // on a branch lets them through). Safe to repeat. False when the repository can't have rulesets, such as a private
+    // repo on a free plan, which answers 403 or 404.
+    private async Task<bool> EnsureFeatureLockRulesetAsync(string repoUrl, string token)
+    {
+        if ((await FindFeatureLockRulesetsAsync(repoUrl, token)).Count > 0)
+        {
+            return true;
+        }
+
+        var create = CreateRequest(HttpMethod.Post, $"{repoUrl}/rulesets", token);
+        create.Content = JsonContent.Create(new
+        {
+            name = FeatureLockRulesetName,
+            target = "branch",
+            enforcement = "active",
+            bypass_actors = new[] { new { actor_id = AppId(), actor_type = "Integration", bypass_mode = "always" } },
+            conditions = new { ref_name = new { include = new[] { "refs/heads/feature/**" }, exclude = Array.Empty<string>() } },
+            rules = new[] { new { type = "creation" }, new { type = "update" }, new { type = "deletion" }, new { type = "non_fast_forward" } }
+        });
+        var response = await _httpClient.SendAsync(create);
+        if (response.IsSuccessStatusCode)
+        {
+            return true;
+        }
+
+        // 422 is also what a claim racing this one gets for the name already taken.
+        if (response.StatusCode == HttpStatusCode.UnprocessableEntity)
+        {
+            return (await FindFeatureLockRulesetsAsync(repoUrl, token)).Count > 0;
+        }
+
+        if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return true;
+    }
+
+    private async Task<List<GitHubRulesetPayload>> FindFeatureLockRulesetsAsync(string repoUrl, string token)
+    {
+        var response = await _httpClient.SendAsync(CreateRequest(HttpMethod.Get, $"{repoUrl}/rulesets", token));
+        if (!response.IsSuccessStatusCode)
+        {
+            return [];
+        }
+
+        var all = await response.Content.ReadFromJsonAsync<List<GitHubRulesetPayload>>() ?? [];
+        return all.Where(r => r.Name == FeatureLockRulesetName).ToList();
+    }
+
+    // Fallback only: a protection rule on one branch. Only the Bot may push, nobody may force-push or delete, and admins
+    // are meant to be held to it too, but GitHub lets owners through the push restriction.
     // "Only the Bot" needs push restrictions, which GitHub offers on organization repositories only.
     private async Task ProtectBranchAsync(string repoUrl, string token, bool isOrganization, string branchName)
     {

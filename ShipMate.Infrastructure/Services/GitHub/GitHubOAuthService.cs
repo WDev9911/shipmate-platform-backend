@@ -19,17 +19,29 @@ public class GitHubOAuthService : IGitHubOAuthService
         _configuration = configuration;
     }
 
-    public async Task<GitHubTokenResult> ExchangeCodeAsync(string code)
+    public Task<GitHubTokenResult> ExchangeCodeAsync(string code) =>
+        RequestTokenAsync(new Dictionary<string, string>
+        {
+            ["client_id"] = _configuration["GitHub:ClientId"]!,
+            ["client_secret"] = _configuration["GitHub:ClientSecret"]!,
+            ["code"] = code,
+            ["redirect_uri"] = _configuration["GitHub:RedirectUri"]!
+        });
+
+    public Task<GitHubTokenResult> RefreshTokenAsync(string refreshToken) =>
+        RequestTokenAsync(new Dictionary<string, string>
+        {
+            ["client_id"] = _configuration["GitHub:ClientId"]!,
+            ["client_secret"] = _configuration["GitHub:ClientSecret"]!,
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshToken
+        });
+
+    private async Task<GitHubTokenResult> RequestTokenAsync(Dictionary<string, string> form)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "https://github.com/login/oauth/access_token")
         {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["client_id"] = _configuration["GitHub:ClientId"]!,
-                ["client_secret"] = _configuration["GitHub:ClientSecret"]!,
-                ["code"] = code,
-                ["redirect_uri"] = _configuration["GitHub:RedirectUri"]!
-            })
+            Content = new FormUrlEncodedContent(form)
         };
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 

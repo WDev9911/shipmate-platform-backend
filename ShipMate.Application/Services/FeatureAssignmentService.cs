@@ -86,7 +86,8 @@ public class FeatureAssignmentService : IFeatureAssignmentService
 
         if (string.IsNullOrWhiteSpace(member.User.GitHubUsername))
         {
-            throw new GitHubNotConnectedException();
+            throw new GitHubNotConnectedException(
+                "Connect your GitHub account before taking a feature: the branch ShipMate creates for you is named after it.");
         }
 
         var assignment = new FeatureAssignment

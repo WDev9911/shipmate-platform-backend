@@ -90,9 +90,9 @@ public class WorkspacesController : ControllerBase
     }
 
     [HttpDelete("{id:guid}/members/{userId:guid}")]
-    public async Task<IActionResult> RemoveMember(Guid id, Guid userId)
+    public async Task<IActionResult> RemoveMember(Guid id, Guid userId, [FromQuery] bool force = false)
     {
-        await _workspaceService.RemoveMemberAsync(_currentUserService.UserId!.Value, id, userId);
+        await _workspaceService.RemoveMemberAsync(_currentUserService.UserId!.Value, id, userId, force);
         return NoContent();
     }
 

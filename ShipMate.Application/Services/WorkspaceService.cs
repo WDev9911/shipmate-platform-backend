@@ -4,6 +4,7 @@ using ShipMate.Application.Exceptions;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Application.Interfaces.Services;
 using ShipMate.Application.Security;
+using ShipMate.Domain.Common;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
 using ShipMate.Domain.Policies;
@@ -12,6 +13,11 @@ namespace ShipMate.Application.Services;
 
 public class WorkspaceService : IWorkspaceService
 {
+    private const string RepoInviteSent = "sent";
+    private const string RepoInviteAlreadyHasAccess = "alreadyHasAccess";
+    private const string RepoInviteFailed = "failed";
+    private const string RepoInviteNoRepo = "noRepo";
+
     private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IWorkspaceMemberRepository _workspaceMemberRepository;
     private readonly IWorkspaceAccessGuard _workspaceAccessGuard;
@@ -23,6 +29,8 @@ public class WorkspaceService : IWorkspaceService
     private readonly IEncryptionService _encryptionService;
     private readonly IEmailSender _emailSender;
     private readonly IWorkspaceNotifier _notifier;
+    private readonly IAuditTrail _auditTrail;
+    private readonly IFeatureAssignmentRepository _assignmentRepository;
     private readonly IMapper _mapper;
 
     public WorkspaceService(
@@ -37,9 +45,13 @@ public class WorkspaceService : IWorkspaceService
         IEncryptionService encryptionService,
         IEmailSender emailSender,
         IWorkspaceNotifier notifier,
+        IAuditTrail auditTrail,
+        IFeatureAssignmentRepository assignmentRepository,
         IMapper mapper)
     {
         _notifier = notifier;
+        _auditTrail = auditTrail;
+        _assignmentRepository = assignmentRepository;
         _workspaceRepository = workspaceRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
         _workspaceAccessGuard = workspaceAccessGuard;
@@ -187,7 +199,7 @@ public class WorkspaceService : IWorkspaceService
 
         await _workspaceRepository.SaveChangesAsync();
 
-        await _emailSender.SendAsync(
+        await _emailSender.TrySendAsync(
             targetUser.Email,
             $"You've been invited to \"{workspace.Name}\" on ShipMate",
             $"""
@@ -249,9 +261,9 @@ public class WorkspaceService : IWorkspaceService
         return _mapper.Map<WorkspaceMemberDto>(membership);
     }
 
-    public async Task RemoveMemberAsync(Guid userId, Guid workspaceId, Guid memberUserId)
+    public async Task RemoveMemberAsync(Guid userId, Guid workspaceId, Guid memberUserId, bool force = false)
     {
-        await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         var targetMembership = await GetActiveMembershipOrThrow(workspaceId, memberUserId);
 
@@ -259,6 +271,18 @@ public class WorkspaceService : IWorkspaceService
         if (targetMembership.Role == WorkspaceMemberRole.Manager)
         {
             throw new WorkspaceMustHaveManagerException();
+        }
+
+        // Membership is what grants access to the repository, so the access goes first: if GitHub can't take it away,
+        // the member stays, and removing again later finishes the job. A forced removal skips this and leaves a record.
+        var gitHubUsername = targetMembership.User?.GitHubUsername;
+        try
+        {
+            await RevokeFromRepoAsync(workspace, gitHubUsername);
+        }
+        catch (GitHubRevokeFailedException) when (force)
+        {
+            await _auditTrail.AppendAsync(workspaceId, AuditTypes.RepoRevokeSkipped, userId, new { memberUserId, gitHubUsername });
         }
 
         targetMembership.Status = WorkspaceMemberStatus.Removed;
@@ -278,6 +302,13 @@ public class WorkspaceService : IWorkspaceService
     {
         var invitation = await GetPendingInvitationOrThrow(userId, workspaceId);
 
+        // Members get access to the repository, which goes by their GitHub name: nobody joins without one.
+        var gitHubUsername = invitation.User?.GitHubUsername;
+        if (string.IsNullOrWhiteSpace(gitHubUsername))
+        {
+            throw new GitHubRequiredToJoinException();
+        }
+
         invitation.Status = WorkspaceMemberStatus.Active;
         invitation.SkillLevel = request.SkillLevel;
         invitation.UpdatedAt = DateTime.UtcNow;
@@ -285,8 +316,100 @@ public class WorkspaceService : IWorkspaceService
 
         await _workspaceRepository.SaveChangesAsync();
         await NotifyBackupMatchesAsync(workspaceId, userId, request.SkillLevel);
+        var workspace = await _workspaceRepository.GetByIdAsync(workspaceId);
+        var repoInvite = await InviteToRepoAsync(workspace, gitHubUsername);
 
-        return _mapper.Map<WorkspaceMemberDto>(invitation);
+        var dto = _mapper.Map<WorkspaceMemberDto>(invitation);
+        dto.RepoInvite = repoInvite;
+        return dto;
+    }
+
+    // Joining or linking must not fail because GitHub does: a refused or failed invitation is left on record,
+    // and the access is granted by hand.
+    private async Task<string> InviteToRepoAsync(Workspace? workspace, string gitHubUsername)
+    {
+        if (workspace is not { GitHubInstallationId: { } installationId, GitHubRepoOwner: { } owner, GitHubRepoName: { } repo })
+        {
+            return RepoInviteNoRepo;
+        }
+
+        try
+        {
+            var sent = await _gitHubAppService.InviteCollaboratorAsync(installationId, owner, repo, gitHubUsername);
+            return sent ? RepoInviteSent : RepoInviteAlreadyHasAccess;
+        }
+        catch (AppException ex) when (ex is GitHubRequestFailedException or GitHubAppUninstalledException)
+        {
+            // One record per save: each one is chained to the last record already stored.
+            await _auditTrail.AppendAsync(workspace.Id, AuditTypes.RepoInviteFailed, null, new { gitHubUsername, reason = ex.ErrorCode });
+            await _workspaceRepository.SaveChangesAsync();
+            return RepoInviteFailed;
+        }
+    }
+
+    // The repository was linked after these people joined: they get in now. The Manager linked it, so already has access.
+    private async Task InviteMembersToRepoAsync(Workspace workspace)
+    {
+        var members = await _workspaceMemberRepository.GetByWorkspaceIdAsync(workspace.Id);
+        foreach (var member in members.Where(m =>
+                     m.Status == WorkspaceMemberStatus.Active && m.Role != WorkspaceMemberRole.Manager))
+        {
+            if (!string.IsNullOrWhiteSpace(member.User?.GitHubUsername))
+            {
+                await InviteToRepoAsync(workspace, member.User.GitHubUsername);
+            }
+        }
+    }
+
+    // Takes a member's access to the repository away. Not finishing is an error, not something to swallow: a member who is
+    // gone from the workspace but still holds access is exactly what this is meant to prevent.
+    private async Task RevokeFromRepoAsync(Workspace workspace, string? gitHubUsername)
+    {
+        if (string.IsNullOrWhiteSpace(gitHubUsername)
+            || workspace is not { GitHubInstallationId: { } installationId, GitHubRepoOwner: { } owner, GitHubRepoName: { } repo })
+        {
+            return;
+        }
+
+        try
+        {
+            await _gitHubAppService.RemoveCollaboratorAsync(installationId, owner, repo, gitHubUsername);
+        }
+        catch (GitHubRequestFailedException)
+        {
+            throw new GitHubRevokeFailedException();
+        }
+    }
+
+    // The repository is being left: its feature-branch ruleset and the required ShipMate check on the default branch go,
+    // or the owner is left with a check nobody reports and a main that can't be merged into. A failure doesn't hold the
+    // unlink up (there is nothing to retry once the link is gone); it is recorded so the owner knows to clean up by hand.
+    private async Task RemoveRepoLockAsync(Workspace workspace)
+    {
+        if (workspace is not { GitHubInstallationId: { } installationId, GitHubRepoOwner: { } owner, GitHubRepoName: { } repo })
+        {
+            return;
+        }
+
+        try
+        {
+            await _gitHubAppService.RemoveRepoLockAsync(installationId, owner, repo);
+        }
+        catch (AppException ex) when (ex is GitHubRequestFailedException or GitHubAppUninstalledException)
+        {
+            await _auditTrail.AppendAsync(workspace.Id, AuditTypes.RepoCleanupFailed, null, new { owner, repo, reason = ex.ErrorCode });
+        }
+    }
+
+    // The repository is being unlinked or swapped: every member loses it. The Manager keeps theirs, as it was never granted here.
+    private async Task RevokeMembersFromRepoAsync(Workspace workspace)
+    {
+        var members = await _workspaceMemberRepository.GetByWorkspaceIdAsync(workspace.Id);
+        foreach (var member in members.Where(m =>
+                     m.Status == WorkspaceMemberStatus.Active && m.Role != WorkspaceMemberRole.Manager))
+        {
+            await RevokeFromRepoAsync(workspace, member.User?.GitHubUsername);
+        }
     }
 
     // A backup feature is waiting for someone skilled enough: tell the person whose skill just reached it.
@@ -359,14 +482,32 @@ public class WorkspaceService : IWorkspaceService
         var installation = await _gitHubAppService.FindInstallationAsync(request.Owner, request.Name)
             ?? throw new GitHubAppNotInstalledException(_gitHubAppService.InstallUrl);
 
+        // Nothing to protect yet: say so now rather than leave the merge gate off with no way to switch it on later.
+        if (!await _gitHubAppService.RepoHasCommitsAsync(installation.Id, request.Owner, request.Name))
+        {
+            throw new GitHubRepoEmptyException();
+        }
+
+        // Code reaches the default branch only through a pull request the Bot has put its check on. This comes before anything
+        // is taken off the old repository: if the new one refuses, the old one must still be locked.
+        var mergeGateEnabled = await _gitHubAppService.EnsureMergeGateAsync(
+            installation.Id, installation.IsOrganization, request.Owner, request.Name);
+
+        // Moving to another repository: nobody keeps access to the old one. Nothing is changed if that can't be done.
+        var movesToOtherRepo = workspace.GitHubInstallationId is not null
+            && !(string.Equals(workspace.GitHubRepoOwner, request.Owner, StringComparison.OrdinalIgnoreCase)
+                 && string.Equals(workspace.GitHubRepoName, request.Name, StringComparison.OrdinalIgnoreCase));
+        if (movesToOtherRepo)
+        {
+            await RevokeMembersFromRepoAsync(workspace);
+            await RemoveRepoLockAsync(workspace);
+        }
+
         workspace.GitHubRepoOwner = request.Owner;
         workspace.GitHubRepoName = request.Name;
         workspace.GitHubInstallationId = installation.Id;
         workspace.GitHubRepoIsOrganization = installation.IsOrganization;
-
-        // Code reaches the default branch only through a pull request the Bot has put its check on.
-        workspace.GitHubMergeGateEnabled = await _gitHubAppService.EnsureMergeGateAsync(
-            installation.Id, installation.IsOrganization, request.Owner, request.Name);
+        workspace.GitHubMergeGateEnabled = mergeGateEnabled;
 
         // Webhook secret generated now, ready for a GitHub webhook to be registered and verified against.
         var (webhookSecretPlain, _) = SecureTokenGenerator.GenerateTokenPair();
@@ -377,12 +518,58 @@ public class WorkspaceService : IWorkspaceService
 
         await _workspaceRepository.SaveChangesAsync();
 
+        // Members who joined before the repository existed (or before it moved) get in now.
+        await InviteMembersToRepoAsync(workspace);
+
+        // Unlinking took the lock off the branches already handed out; they are locked again, in the new repository if it moved.
+        await LockHeldBranchesAsync(workspace, movesToOtherRepo);
+
         return _mapper.Map<WorkspaceDto>(workspace);
+    }
+
+    // A branch that can't be locked now is marked as not created, so its holder retries it through the usual retry.
+    private async Task LockHeldBranchesAsync(Workspace workspace, bool repoChanged)
+    {
+        var held = (await _assignmentRepository.GetByWorkspaceIdAsync(workspace.Id))
+            .Where(a => a.ReleasedAt is null && a.BranchCreatedAt is not null)
+            .ToList();
+        if (held.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var assignment in held)
+        {
+            try
+            {
+                await _gitHubAppService.CreateProtectedBranchAsync(
+                    workspace.GitHubInstallationId!.Value, workspace.GitHubRepoIsOrganization,
+                    workspace.GitHubRepoOwner!, workspace.GitHubRepoName!, assignment.BranchName);
+            }
+            catch (AppException)
+            {
+                assignment.BranchCreatedAt = null;
+            }
+
+            // Commits approved in the old repository say nothing about the branch in a new one.
+            if (repoChanged)
+            {
+                assignment.LastApprovedSha = null;
+                assignment.FlaggedHeadSha = null;
+            }
+        }
+
+        await _assignmentRepository.SaveChangesAsync();
     }
 
     public async Task UnlinkGitHubRepoAsync(Guid userId, Guid workspaceId)
     {
         var workspace = await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
+
+        // Members lose the repository, and ShipMate's rules come off it, before the link is forgotten: the link is what
+        // says where the repository is.
+        await RevokeMembersFromRepoAsync(workspace);
+        await RemoveRepoLockAsync(workspace);
 
         workspace.GitHubRepoOwner = null;
         workspace.GitHubRepoName = null;
@@ -398,7 +585,8 @@ public class WorkspaceService : IWorkspaceService
     }
 
     private Task<string> GetValidGitHubAccessTokenOrThrow(Guid userId) =>
-        GitHubAccessTokens.GetValidOrThrowAsync(_gitHubConnectionRepository, _encryptionService, userId);
+        GitHubAccessTokens.GetValidOrThrowAsync(_gitHubConnectionRepository, _gitHubOAuthService, _encryptionService,
+            _workspaceRepository.SaveChangesAsync, userId);
 
     private async Task<WorkspaceMember> GetActiveMembershipOrThrow(Guid workspaceId, Guid memberUserId)
     {

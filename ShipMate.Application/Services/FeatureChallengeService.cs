@@ -22,6 +22,7 @@ public class FeatureChallengeService : IFeatureChallengeService
     private readonly IAiGateway _aiGateway;
     private readonly IAuditTrail _auditTrail;
     private readonly IWorkspaceNotifier _notifier;
+    private readonly IGitHubAppService _gitHubAppService;
     private readonly IMapper _mapper;
 
     public FeatureChallengeService(
@@ -33,8 +34,10 @@ public class FeatureChallengeService : IFeatureChallengeService
         IAiGateway aiGateway,
         IAuditTrail auditTrail,
         IWorkspaceNotifier notifier,
+        IGitHubAppService gitHubAppService,
         IMapper mapper)
     {
+        _gitHubAppService = gitHubAppService;
         _challengeRepository = challengeRepository;
         _productDefinitionRepository = productDefinitionRepository;
         _assignmentRepository = assignmentRepository;
@@ -135,7 +138,7 @@ public class FeatureChallengeService : IFeatureChallengeService
     public async Task<FeatureChallengeDto> ApproveAsync(
         Guid userId, Guid workspaceId, Guid challengeId, ApproveChallengeRequest request)
     {
-        await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         var challenge = await GetChallengeOrThrow(workspaceId, challengeId);
         if (challenge.Status != ChallengeStatus.Open)
@@ -198,7 +201,7 @@ public class FeatureChallengeService : IFeatureChallengeService
         });
 
         var now = DateTime.UtcNow;
-        ReleaseReplacedAssignments(snapshot, next, assignments, now);
+        var released = ReleaseReplacedAssignments(snapshot, next, assignments, now);
 
         challenge.Status = ChallengeStatus.Approved;
         challenge.DecidedByUserId = userId;
@@ -214,6 +217,8 @@ public class FeatureChallengeService : IFeatureChallengeService
         }
 
         await _challengeRepository.SaveChangesAsync();
+
+        await DeleteReleasedBranchesAsync(workspace, released);
 
         if (request.Action == ChallengeAction.RemoveAndReplace)
         {
@@ -365,8 +370,37 @@ public class FeatureChallengeService : IFeatureChallengeService
         });
     }
 
+    // A replaced feature is out of the scope, so its branch has no reason to stay locked on the repository. It is done
+    // after the approval is saved and never undoes it: a branch that couldn't be deleted is left on record.
+    private async Task DeleteReleasedBranchesAsync(Workspace workspace, IEnumerable<FeatureAssignment> released)
+    {
+        if (workspace is not { GitHubInstallationId: { } installationId, GitHubRepoOwner: { } owner, GitHubRepoName: { } repo })
+        {
+            return;
+        }
+
+        var failed = new List<string>();
+        foreach (var assignment in released.Where(a => a.BranchCreatedAt is not null))
+        {
+            try
+            {
+                await _gitHubAppService.DeleteBranchAsync(installationId, owner, repo, assignment.BranchName);
+            }
+            catch (AppException ex) when (ex is GitHubRequestFailedException or GitHubAppUninstalledException)
+            {
+                failed.Add(assignment.BranchName);
+            }
+        }
+
+        if (failed.Count > 0)
+        {
+            await _auditTrail.AppendAsync(workspace.Id, AuditTypes.RepoBranchCleanupFailed, null, new { branches = failed });
+            await _challengeRepository.SaveChangesAsync();
+        }
+    }
+
     // A feature replaced by this approval is no longer held by anyone; its assignment stays as history.
-    private static void ReleaseReplacedAssignments(
+    private static List<FeatureAssignment> ReleaseReplacedAssignments(
         MvpSnapshot previous, MvpSnapshot next, IEnumerable<FeatureAssignment> assignments, DateTime now)
     {
         var alreadyReplaced = previous.Features
@@ -378,10 +412,13 @@ public class FeatureChallengeService : IFeatureChallengeService
             .Select(f => f.FeatureId)
             .ToHashSet();
 
-        foreach (var assignment in assignments.Where(a => replacedNow.Contains(a.FeatureId)))
+        var released = assignments.Where(a => replacedNow.Contains(a.FeatureId)).ToList();
+        foreach (var assignment in released)
         {
             assignment.ReleasedAt = now;
         }
+
+        return released;
     }
 
     private static List<AffectedFeatureDto> Affected(

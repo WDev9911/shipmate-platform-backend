@@ -12,4 +12,7 @@ public class WorkspaceMemberDto
     public WorkspaceMemberStatus Status { get; set; }
     public int? SkillLevel { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>Only set when accepting an invitation: "sent", "alreadyHasAccess", "failed" or "noRepo".</summary>
+    public string? RepoInvite { get; set; }
 }

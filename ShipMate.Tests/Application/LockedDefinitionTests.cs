@@ -109,6 +109,8 @@ public class LockedDefinitionTests
         Substitute.For<IEncryptionService>(),
         Substitute.For<IEmailSender>(),
         Substitute.For<IWorkspaceNotifier>(),
+        Substitute.For<IAuditTrail>(),
+        Substitute.For<IFeatureAssignmentRepository>(),
         Substitute.For<IMapper>());
 
     [Fact]

@@ -76,7 +76,7 @@ internal sealed class LockWorld
         Complexity = new FeatureComplexityService(Definitions, guard, Ai, mapper);
         Assignment = new FeatureAssignmentService(Definitions, Assignments, Members, guard,
             Substitute.For<IGitHubAppService>(), Notifier);
-        Challenge = new FeatureChallengeService(Challenges, Definitions, Assignments, Members, guard, Ai, Audit, Notifier, mapper);
+        Challenge = new FeatureChallengeService(Challenges, Definitions, Assignments, Members, guard, Ai, Audit, Notifier, Substitute.For<IGitHubAppService>(), mapper);
         DefinitionService = new ProductDefinitionService(Definitions, guard, mapper);
         Review = new FeatureReviewService(Definitions, guard, mapper);
         Analysis = new ProductDefinitionAnalysisService(
@@ -85,7 +85,7 @@ internal sealed class LockWorld
             Substitute.For<IWorkspaceRepository>(), Members, guard, Definitions,
             Substitute.For<IUserRepository>(), Substitute.For<IGitHubConnectionRepository>(),
             Substitute.For<IGitHubOAuthService>(), Substitute.For<IGitHubAppService>(), Substitute.For<IEncryptionService>(),
-            Substitute.For<IEmailSender>(), Notifier, mapper);
+            Substitute.For<IEmailSender>(), Notifier, Substitute.For<IAuditTrail>(), Substitute.For<IFeatureAssignmentRepository>(), mapper);
     }
 
     // ---- building the scene ----

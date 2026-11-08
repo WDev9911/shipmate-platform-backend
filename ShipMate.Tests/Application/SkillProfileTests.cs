@@ -34,12 +34,24 @@ public class SkillProfileTests
             Substitute.For<IEncryptionService>(),
             Substitute.For<IEmailSender>(),
             _notifier,
-            Substitute.For<IMapper>());
+            Substitute.For<IAuditTrail>(),
+            Substitute.For<IFeatureAssignmentRepository>(),
+            MapperReturningADto());
+    }
+
+    private static IMapper MapperReturningADto()
+    {
+        var mapper = Substitute.For<IMapper>();
+        mapper.Map<WorkspaceMemberDto>(Arg.Any<object>()).Returns(new WorkspaceMemberDto());
+        return mapper;
     }
 
     private WorkspaceMember GivenMember(WorkspaceMemberStatus status = WorkspaceMemberStatus.Active)
     {
-        var member = new WorkspaceMember { WorkspaceId = _workspaceId, UserId = _userId, Status = status };
+        var member = new WorkspaceMember
+        {
+            WorkspaceId = _workspaceId, UserId = _userId, Status = status, User = new User { GitHubUsername = "dev-on-github" }
+        };
         _members.GetByWorkspaceAndUserIdAsync(_workspaceId, _userId).Returns(member);
         return member;
     }

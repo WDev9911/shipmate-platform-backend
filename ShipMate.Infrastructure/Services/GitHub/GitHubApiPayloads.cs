@@ -77,6 +77,26 @@ internal class GitHubRepoOwnerPayload
     public string Login { get; set; } = string.Empty;
 }
 
+// GET /repos/{owner}/{repo}/rulesets
+internal class GitHubRulesetPayload
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+}
+
+// GET /repos/{owner}/{repo}/invitations
+internal class GitHubRepoInvitationPayload
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+
+    [JsonPropertyName("invitee")]
+    public GitHubRepoOwnerPayload? Invitee { get; set; }
+}
+
 // GET /repos/{owner}/{repo}/git/ref/heads/{branch}
 
 internal class GitHubRefPayload
@@ -154,6 +174,10 @@ internal class GitHubCompareFilePayload
     // Missing for binary files and for diffs GitHub considers too large to show.
     [JsonPropertyName("patch")]
     public string? Patch { get; set; }
+
+    // Lines added plus removed: 0 for a binary file, so a missing patch with changes means the diff was too large to show.
+    [JsonPropertyName("changes")]
+    public int Changes { get; set; }
 }
 
 // POST /app/installations/{id}/access_tokens
