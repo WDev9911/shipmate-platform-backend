@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Configuration;
@@ -20,17 +19,29 @@ public class GitHubOAuthService : IGitHubOAuthService
         _configuration = configuration;
     }
 
-    public async Task<GitHubTokenResult> ExchangeCodeAsync(string code)
+    public Task<GitHubTokenResult> ExchangeCodeAsync(string code) =>
+        RequestTokenAsync(new Dictionary<string, string>
+        {
+            ["client_id"] = _configuration["GitHub:ClientId"]!,
+            ["client_secret"] = _configuration["GitHub:ClientSecret"]!,
+            ["code"] = code,
+            ["redirect_uri"] = _configuration["GitHub:RedirectUri"]!
+        });
+
+    public Task<GitHubTokenResult> RefreshTokenAsync(string refreshToken) =>
+        RequestTokenAsync(new Dictionary<string, string>
+        {
+            ["client_id"] = _configuration["GitHub:ClientId"]!,
+            ["client_secret"] = _configuration["GitHub:ClientSecret"]!,
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshToken
+        });
+
+    private async Task<GitHubTokenResult> RequestTokenAsync(Dictionary<string, string> form)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "https://github.com/login/oauth/access_token")
         {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["client_id"] = _configuration["GitHub:ClientId"]!,
-                ["client_secret"] = _configuration["GitHub:ClientSecret"]!,
-                ["code"] = code,
-                ["redirect_uri"] = _configuration["GitHub:RedirectUri"]!
-            })
+            Content = new FormUrlEncodedContent(form)
         };
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
@@ -93,38 +104,6 @@ public class GitHubOAuthService : IGitHubOAuthService
             IsPrivate = r.Private,
             DefaultBranch = r.DefaultBranch
         }).ToList();
-    }
-
-    public async Task CreateBranchFromDefaultAsync(string accessToken, string owner, string repo, string branchName)
-    {
-        var repoUrl = $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}";
-        try
-        {
-            var repository = await SendGitHubApiRequestAsync<GitHubRepoPayload>(repoUrl, accessToken)
-                ?? throw new GitHubBranchCreationFailedException();
-            var head = await SendGitHubApiRequestAsync<GitHubRefPayload>(
-                    $"{repoUrl}/git/ref/heads/{Uri.EscapeDataString(repository.DefaultBranch)}", accessToken)
-                ?? throw new GitHubBranchCreationFailedException();
-
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{repoUrl}/git/refs")
-            {
-                Content = JsonContent.Create(new { @ref = $"refs/heads/{branchName}", sha = head.Object.Sha })
-            };
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            request.Headers.UserAgent.ParseAdd("ShipMate");
-
-            var response = await _httpClient.SendAsync(request);
-
-            // 422 is GitHub's answer when the ref already exists: the branch is there, which is what we want.
-            if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.UnprocessableEntity)
-            {
-                throw new GitHubBranchCreationFailedException();
-            }
-        }
-        catch (HttpRequestException)
-        {
-            throw new GitHubBranchCreationFailedException();
-        }
     }
 
     private async Task<T?> SendGitHubApiRequestAsync<T>(string url, string accessToken)

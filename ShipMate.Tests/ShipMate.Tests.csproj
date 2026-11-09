@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ShipMate.Application\ShipMate.Application.csproj" />
     <ProjectReference Include="..\ShipMate.Domain\ShipMate.Domain.csproj" />
+    <ProjectReference Include="..\ShipMate.Infrastructure\ShipMate.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

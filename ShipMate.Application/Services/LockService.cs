@@ -3,6 +3,7 @@ using ShipMate.Application.DTOs.ProductDefinitions;
 using ShipMate.Application.Exceptions;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Application.Interfaces.Services;
+using ShipMate.Domain.Common;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
 using ShipMate.Domain.Policies;
@@ -16,17 +17,20 @@ public class LockService : ILockService
     private readonly IProductDefinitionRepository _productDefinitionRepository;
     private readonly IWorkspaceMemberRepository _workspaceMemberRepository;
     private readonly IWorkspaceAccessGuard _workspaceAccessGuard;
+    private readonly IAuditTrail _auditTrail;
     private readonly IMapper _mapper;
 
     public LockService(
         IProductDefinitionRepository productDefinitionRepository,
         IWorkspaceMemberRepository workspaceMemberRepository,
         IWorkspaceAccessGuard workspaceAccessGuard,
+        IAuditTrail auditTrail,
         IMapper mapper)
     {
         _productDefinitionRepository = productDefinitionRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
         _workspaceAccessGuard = workspaceAccessGuard;
+        _auditTrail = auditTrail;
         _mapper = mapper;
     }
 
@@ -94,6 +98,14 @@ public class LockService : ILockService
 
         snapshot.Hash = MvpSnapshotHasher.Compute(snapshot);
         await _productDefinitionRepository.AddSnapshotAsync(snapshot);
+
+        // Written in the same save as the snapshot, so the first Lock can't exist without its record.
+        await _auditTrail.AppendAsync(workspaceId, AuditTypes.SnapshotLocked, userId, new
+        {
+            version = snapshot.Version,
+            hash = snapshot.Hash,
+            featureCount = included.Count
+        });
 
         var now = DateTime.UtcNow;
         productDefinition.MarkLocked(now);

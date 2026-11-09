@@ -14,7 +14,8 @@ public interface IWorkspaceService
     Task<WorkspaceMemberDto> AddMemberAsync(Guid requesterId, Guid workspaceId, AddMemberRequest request);
     Task<WorkspaceMemberDto> UpdateMemberRoleAsync(Guid requesterId, Guid workspaceId, Guid memberUserId, UpdateMemberRoleRequest request);
     Task<WorkspaceMemberDto> UpdateMySkillAsync(Guid userId, Guid workspaceId, UpdateMySkillRequest request);
-    Task RemoveMemberAsync(Guid requesterId, Guid workspaceId, Guid memberUserId);
+    /// <param name="force">Removes the member even if GitHub can't take their repository access away; the skip is recorded.</param>
+    Task RemoveMemberAsync(Guid requesterId, Guid workspaceId, Guid memberUserId, bool force = false);
 
     Task<List<WorkspaceInvitationDto>> GetMyInvitationsAsync(Guid userId);
     Task<WorkspaceMemberDto> AcceptInvitationAsync(Guid userId, Guid workspaceId, AcceptInvitationRequest request);

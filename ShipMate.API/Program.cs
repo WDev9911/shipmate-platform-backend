@@ -5,8 +5,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using ShipMate.API.Filters;
+using ShipMate.API.Hubs;
 using ShipMate.API.Middlewares;
 using ShipMate.Application;
+using ShipMate.Application.Interfaces.Services;
 using ShipMate.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -74,6 +76,8 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
+const string WorkspaceHubPath = "/hubs/workspace";
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -91,6 +95,22 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Secret"]!))
         };
+
+        // A browser can't put an Authorization header on a WebSocket, so SignalR sends the token in the query string.
+        // Only the hub reads it from there; everything else still needs the header.
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var token = context.Request.Query["access_token"];
+                if (!string.IsNullOrEmpty(token) && context.HttpContext.Request.Path.StartsWithSegments(WorkspaceHubPath))
+                {
+                    context.Token = token;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
     });
 builder.Services.AddAuthorization();
 
@@ -105,6 +125,9 @@ builder.Services.AddCors(options =>
             .AllowCredentials(); // required so the browser sends/receives the httpOnly refresh token cookie
     });
 });
+
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<IWorkspaceNotifier, SignalRWorkspaceNotifier>();
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -128,6 +151,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<WorkspaceHub>(WorkspaceHubPath);
 
 app.Run();
 

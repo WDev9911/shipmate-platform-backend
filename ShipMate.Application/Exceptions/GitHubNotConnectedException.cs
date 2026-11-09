@@ -9,4 +9,9 @@ public class GitHubNotConnectedException : AppException
         : base("Connect (or reconnect) your GitHub account before linking a repository to this workspace.")
     {
     }
+
+    public GitHubNotConnectedException(string message)
+        : base(message)
+    {
+    }
 }

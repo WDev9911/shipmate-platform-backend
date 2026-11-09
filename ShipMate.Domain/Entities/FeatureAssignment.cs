@@ -21,4 +21,10 @@ public class FeatureAssignment : BaseEntity
 
     // Set when a Feature Challenge replaces the feature: the developer no longer holds it. The row stays as history.
     public DateTime? ReleasedAt { get; set; }
+
+    // The commit the Bot last moved the branch to. A branch head that differs from it means someone pushed around the Bot.
+    public string? LastApprovedSha { get; set; }
+
+    // The branch head already reported as a direct push, so the same head is not reported on every later submit.
+    public string? FlaggedHeadSha { get; set; }
 }

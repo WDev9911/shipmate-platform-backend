@@ -75,7 +75,8 @@ ShipMate/
 ## Yêu cầu môi trường
 
 - .NET 8 SDK trở lên
-- Một DB provider (SQL Server / PostgreSQL / MySQL...) — hiện đang dùng `InMemory` tạm thời, xem `ShipMate.Infrastructure/DependencyInjection.cs`
+- PostgreSQL (mặc định `localhost:5432`, database `shipmate`)
+- Công cụ `dotnet-ef`: `dotnet tool install --global dotnet-ef`
 
 ## Cài đặt & chạy dự án
 
@@ -83,11 +84,23 @@ ShipMate/
 git clone <repo-url>
 cd ShipMate
 dotnet restore
-dotnet build
-dotnet run --project ShipMate.API
+
+# Cấu hình: sao chép file mẫu rồi điền các giá trị (file thật bị gitignore, không commit)
+cp ShipMate.API/appsettings.Development.example.json ShipMate.API/appsettings.Development.json
+
+# Tạo bảng trong database
+dotnet ef database update --project ShipMate.Infrastructure --startup-project ShipMate.API
+
+# Tin chứng chỉ HTTPS của .NET (một lần mỗi máy), rồi chạy bằng profile https
+dotnet dev-certs https --trust
+dotnet run --project ShipMate.API --launch-profile https
 ```
 
-Sau khi chạy, mở Swagger UI tại `https://localhost:<port>/swagger` để test API.
+Swagger UI: `https://localhost:7138/swagger`. Phải chạy profile `https`: đăng nhập và kết nối GitHub cần HTTPS.
+
+Hướng dẫn chi tiết cho Frontend (các khóa cần điền, tạo GitHub OAuth App, lỗi thường gặp) nằm ở [docs/frontend-guide.md](docs/frontend-guide.md).
+
+Chạy test: `dotnet test`.
 
 ## Team
 

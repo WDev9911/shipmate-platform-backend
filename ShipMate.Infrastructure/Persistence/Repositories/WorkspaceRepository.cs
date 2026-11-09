@@ -24,12 +24,12 @@ public class WorkspaceRepository : IWorkspaceRepository
             .OrderByDescending(w => w.CreatedAt)
             .ToListAsync();
 
-    public async Task<bool> HasManagedWorkspaceWithLinkedGitHubRepoAsync(Guid userId) =>
+    public async Task<bool> IsActiveMemberOfAnyWorkspaceAsync(Guid userId) =>
         await _context.Workspaces.AnyAsync(w =>
-            w.GitHubRepoOwner != null &&
+            w.Status == WorkspaceStatus.Active &&
             _context.WorkspaceMembers.Any(m =>
                 m.WorkspaceId == w.Id && m.UserId == userId &&
-                m.Role == WorkspaceMemberRole.Manager && m.Status == WorkspaceMemberStatus.Active));
+                m.Status == WorkspaceMemberStatus.Active));
 
     public async Task AddAsync(Workspace workspace) =>
         await _context.Workspaces.AddAsync(workspace);

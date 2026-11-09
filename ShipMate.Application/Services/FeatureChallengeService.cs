@@ -5,6 +5,7 @@ using ShipMate.Application.DTOs.ProductDefinitions;
 using ShipMate.Application.Exceptions;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Application.Interfaces.Services;
+using ShipMate.Domain.Common;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
 using ShipMate.Domain.Policies;
@@ -19,6 +20,9 @@ public class FeatureChallengeService : IFeatureChallengeService
     private readonly IWorkspaceMemberRepository _workspaceMemberRepository;
     private readonly IWorkspaceAccessGuard _workspaceAccessGuard;
     private readonly IAiGateway _aiGateway;
+    private readonly IAuditTrail _auditTrail;
+    private readonly IWorkspaceNotifier _notifier;
+    private readonly IGitHubAppService _gitHubAppService;
     private readonly IMapper _mapper;
 
     public FeatureChallengeService(
@@ -28,14 +32,20 @@ public class FeatureChallengeService : IFeatureChallengeService
         IWorkspaceMemberRepository workspaceMemberRepository,
         IWorkspaceAccessGuard workspaceAccessGuard,
         IAiGateway aiGateway,
+        IAuditTrail auditTrail,
+        IWorkspaceNotifier notifier,
+        IGitHubAppService gitHubAppService,
         IMapper mapper)
     {
+        _gitHubAppService = gitHubAppService;
         _challengeRepository = challengeRepository;
         _productDefinitionRepository = productDefinitionRepository;
         _assignmentRepository = assignmentRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
         _workspaceAccessGuard = workspaceAccessGuard;
         _aiGateway = aiGateway;
+        _auditTrail = auditTrail;
+        _notifier = notifier;
         _mapper = mapper;
     }
 
@@ -128,7 +138,7 @@ public class FeatureChallengeService : IFeatureChallengeService
     public async Task<FeatureChallengeDto> ApproveAsync(
         Guid userId, Guid workspaceId, Guid challengeId, ApproveChallengeRequest request)
     {
-        await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         var challenge = await GetChallengeOrThrow(workspaceId, challengeId);
         if (challenge.Status != ChallengeStatus.Open)
@@ -176,8 +186,22 @@ public class FeatureChallengeService : IFeatureChallengeService
         next.Hash = MvpSnapshotHasher.Compute(next);
         await _productDefinitionRepository.AddSnapshotAsync(next);
 
+        // Written in the same save as the new snapshot, so a scope change can't happen without its record.
+        await _auditTrail.AppendAsync(workspaceId, AuditTypes.ScopeChange, userId, new
+        {
+            challengeId = challenge.Id,
+            action = request.Action.ToString(),
+            featureId = challenge.FeatureId,
+            reason = challenge.Reason,
+            removedFeatureId = request.Action == ChallengeAction.RemoveAndReplace ? request.RemoveFeatureId : null,
+            replacementFeatureId = request.Action == ChallengeAction.RemoveAndReplace ? request.ReplacementFeatureId : null,
+            fromVersion = snapshot.Version,
+            toVersion = next.Version,
+            hash = next.Hash
+        });
+
         var now = DateTime.UtcNow;
-        ReleaseReplacedAssignments(snapshot, next, assignments, now);
+        var released = ReleaseReplacedAssignments(snapshot, next, assignments, now);
 
         challenge.Status = ChallengeStatus.Approved;
         challenge.DecidedByUserId = userId;
@@ -193,6 +217,13 @@ public class FeatureChallengeService : IFeatureChallengeService
         }
 
         await _challengeRepository.SaveChangesAsync();
+
+        await DeleteReleasedBranchesAsync(workspace, released);
+
+        if (request.Action == ChallengeAction.RemoveAndReplace)
+        {
+            await NotifyRemovalAsync(workspaceId, snapshot, request.RemoveFeatureId!.Value, assignments);
+        }
 
         return await ToDtoAsync(challenge, next);
     }
@@ -323,8 +354,53 @@ public class FeatureChallengeService : IFeatureChallengeService
         return dto;
     }
 
+    // Whoever held the removed feature, or one that depended on it, is told: their work just changed under them.
+    private async Task NotifyRemovalAsync(
+        Guid workspaceId, MvpSnapshot snapshot, Guid removedFeatureId, IReadOnlyList<FeatureAssignment> assignments)
+    {
+        var affected = MvpSnapshotEvolution.DependentsOf(snapshot, removedFeatureId).Append(removedFeatureId).ToHashSet();
+        var holders = assignments.Where(a => affected.Contains(a.FeatureId)).Select(a => a.AssignedUserId);
+
+        await _notifier.PublishToUsersAsync(holders, WorkspaceEvents.FeatureRemoved, new
+        {
+            workspaceId,
+            featureId = removedFeatureId,
+            featureName = snapshot.Features.First(f => f.FeatureId == removedFeatureId).Name,
+            dependentFeatureIds = affected.Where(id => id != removedFeatureId).ToList()
+        });
+    }
+
+    // A replaced feature is out of the scope, so its branch has no reason to stay locked on the repository. It is done
+    // after the approval is saved and never undoes it: a branch that couldn't be deleted is left on record.
+    private async Task DeleteReleasedBranchesAsync(Workspace workspace, IEnumerable<FeatureAssignment> released)
+    {
+        if (workspace is not { GitHubInstallationId: { } installationId, GitHubRepoOwner: { } owner, GitHubRepoName: { } repo })
+        {
+            return;
+        }
+
+        var failed = new List<string>();
+        foreach (var assignment in released.Where(a => a.BranchCreatedAt is not null))
+        {
+            try
+            {
+                await _gitHubAppService.DeleteBranchAsync(installationId, owner, repo, assignment.BranchName);
+            }
+            catch (AppException ex) when (ex is GitHubRequestFailedException or GitHubAppUninstalledException)
+            {
+                failed.Add(assignment.BranchName);
+            }
+        }
+
+        if (failed.Count > 0)
+        {
+            await _auditTrail.AppendAsync(workspace.Id, AuditTypes.RepoBranchCleanupFailed, null, new { branches = failed });
+            await _challengeRepository.SaveChangesAsync();
+        }
+    }
+
     // A feature replaced by this approval is no longer held by anyone; its assignment stays as history.
-    private static void ReleaseReplacedAssignments(
+    private static List<FeatureAssignment> ReleaseReplacedAssignments(
         MvpSnapshot previous, MvpSnapshot next, IEnumerable<FeatureAssignment> assignments, DateTime now)
     {
         var alreadyReplaced = previous.Features
@@ -336,10 +412,13 @@ public class FeatureChallengeService : IFeatureChallengeService
             .Select(f => f.FeatureId)
             .ToHashSet();
 
-        foreach (var assignment in assignments.Where(a => replacedNow.Contains(a.FeatureId)))
+        var released = assignments.Where(a => replacedNow.Contains(a.FeatureId)).ToList();
+        foreach (var assignment in released)
         {
             assignment.ReleasedAt = now;
         }
+
+        return released;
     }
 
     private static List<AffectedFeatureDto> Affected(
