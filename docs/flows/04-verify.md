@@ -27,6 +27,7 @@ Mục lục
 14. Thứ tự commit gợi ý
 15. Để sau (cố ý chưa làm)
 16. Giới hạn đã biết
+17. Gửi Lâm (VERIFY) và frontend
 
 ---
 
@@ -780,3 +781,21 @@ Mỗi commit tự build và test đạt:
 - **Nhận feature `backup` đổi trạng thái trong cùng version**, không sinh checklist mới; con số `lockedFeatures` tự tăng theo.
 - **Workspace Archive vẫn sửa được**, giống mọi luồng khác hiện tại.
 - **Đổi constructor** của `LockService`, `FeatureChallengeService`, `NextBestActionService` làm hỏng biên dịch test cũ cho tới khi GĐ 3 và GĐ 7 sửa xong chỗ khởi tạo.
+
+---
+
+## 17. Gửi Lâm (VERIFY) và frontend
+
+VERIFY đã cài đặt xong (PR từ `feature/verify`). Spec 2.4 để ngỏ hoặc mâu thuẫn ở năm chỗ; code đang làm như dưới đây. Nếu Lâm muốn khác thì nói trước khi SHIP bắt đầu dùng, vì hợp đồng cho SHIP (mục 9) dựa trên các quyết định này.
+
+| # | Câu hỏi | Code đang làm | Lý do |
+|---|---|---|---|
+| 1 | Lần Lock đầu có tạo checklist cho version 1 không? Spec chỉ nhắc "mỗi khi Feature Challenge sinh snapshot mới" | **Có**, cả Lock đầu và mỗi challenge được duyệt, cùng lần lưu với snapshot | Version 1 do Lock sinh ra; thiếu checklist thì version 1 không bao giờ ship được (D1) |
+| 2 | Checklist "thích ứng theo feature" (không có auth thì ẩn mục auth): ai quyết một mục không áp dụng? | Luôn đủ 5 mục. **Manager** đánh dấu "không áp dụng" **kèm lý do bắt buộc** (10 đến 500 ký tự), ghi vào audit. Riêng `main_user_journey` không bỏ qua được | Feature chỉ có tên và mô tả tự do; đoán bằng từ khóa dễ ẩn nhầm và ẩn nhầm là bỏ một bước kiểm mà không ai biết; gọi AI thì tốn lượt cho luồng không cần AI (D3) |
+| 3 | Còn drift `Unresolved`/`Acknowledged` thì VERIFY có chặn không? Spec BUILD nói có, spec VERIFY không nhắc, spec SHIP nói drift chỉ trừ điểm | **Không chặn.** Drift chỉ hiển thị số lượng (đếm theo feature đã khóa trong version) | Nếu VERIFY chặn thì drift gián tiếp chặn SHIP, trái với chủ ý tránh "Failure to Ship" của SHIP (D4) |
+| 4 | Ai được tick? Spec ghi "Dev" | Mọi **thành viên đang hoạt động** tick; chỉ **Manager** đổi "áp dụng" | Ai trong đội cũng có thể kiểm; bỏ một mục là quyết định phạm vi, thuộc Manager (D8) |
+| 5 | `verify_checklist_incomplete` ở NBA nghĩa là gì? Hai giá trị cũ luôn gắn với một feature phụ thuộc, giá trị này gắn với cả version | NBA trả hành động `CompleteVerification` (kèm `blockedReason: verify_checklist_incomplete`, `snapshotVersion`) khi mọi feature khóa đã được duyệt mà checklist chưa xong. **Không chặn việc code**: chỉ hiện khi người gọi không còn việc nào | Spec nói "feature/task bị chặn" nhưng không có feature cụ thể nào bị chặn; hiểu là "việc kế tiếp là hoàn thành checklist, và Ship bị chặn bởi nó" (mục 10) |
+
+Kiểm thử và dữ liệu chạy thật: `docs/verify-test-report.md`.
+
+**Frontend:** mục 2.10 của `docs/frontend-guide.md` (4 endpoint, mã lỗi, hành động NBA mới; `blockedReason` từ nay xuất hiện ở hai loại hành động).

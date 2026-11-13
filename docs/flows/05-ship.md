@@ -17,6 +17,7 @@ Mục lục
 12. Kiểm thử
 13. Cần chốt với thầy Vũ
 14. Giới hạn đã biết
+15. Gửi người làm SHIP
 
 ---
 
@@ -234,3 +235,19 @@ Sự kiện SignalR `ShipCardMinted` tới mọi thành viên (cùng hub `/hubs/
 - Bằng chứng sở hữu chứng minh đội kiểm soát tên miền, không chứng minh trang chạy đúng code của version đó.
 - Điểm neo chứng minh lịch sử không bị sửa **sau** khi cấp thẻ, không chứng minh lịch sử đầy đủ.
 - `PENALTY_REFUND` chưa có, nên Override hotfix hợp lệ vẫn bị trừ điểm.
+
+---
+
+## 15. Gửi người làm SHIP
+
+VERIFY đã cài đặt xong (PR từ `feature/verify`). Những điều SHIP cần biết trước khi code:
+
+1. **Hợp đồng với VERIFY đã có code:** `IVerificationService.GetReadinessAsync(workspaceId, version)` trả `Exists`, `AllItemsChecked`, `MissingItems`, `CompletedAt`, `ChecklistId`. Không tự đọc bảng `verification_*`. Chi tiết ở `04-verify.md` mục 9. Version không có checklist thì `Exists = false` và phải chặn.
+2. **Hai lỗi nên xử lý ngay trong thiết kế, không chờ về sau** (mục 2 và mục 6 của tài liệu này):
+   - **Chặn SSRF ở bước Ping:** server tự gọi URL do người dùng nhập, nên phải chỉ nhận `https`, từ chối IP nội bộ/loopback/link-local (kiểm sau khi phân giải DNS **và** lúc kết nối), giới hạn chuyển hướng, timeout, và không trả nội dung phản hồi.
+   - **Bằng chứng sở hữu URL:** không có thì `https://google.com` cũng ship được; xem file `/.well-known/shipmate.txt` ở mục 6.
+3. **Cờ Governance Suspended** hiện là "App ShipMate bị gỡ khỏi repo" (`APP_UNINSTALLED`), không phải "OAuth token bị revoke" như spec 2.5 ghi. Thông báo nên là "cài lại ShipMate App".
+4. **Đếm drift có hai cách khác nhau:** VERIFY hiển thị theo **feature đã khóa trong version**; SHIP theo spec đếm theo `SnapshotVersionAtCheck`. Hai con số có thể khác nhau; hai bên nên chốt một cách nếu muốn hai màn hình khớp (mục 8).
+5. **Công thức điểm** (mục 8) mới là bản nháp v0 để code chạy được; trọng số phải chốt với thầy Vũ (mục 13). Nhớ lưu điểm từng thành phần, số phiên bản công thức và điểm neo audit trên Ship Card (S6).
+6. **Chưa có bảo đảm "checklist khớp đúng bản code đang chạy":** VERIFY không biết code đổi sau lúc tick xong (`04-verify.md` mục 15). Ship Card chỉ ghi lúc checklist hoàn tất.
+7. **Quyền ship** (S8 ở mục 2) mới chỉ là đề xuất "chỉ Manager"; cần người làm SHIP và nhóm xác nhận.
