@@ -15,6 +15,7 @@ public class LockServiceTests
     private readonly IProductDefinitionRepository _repository = Substitute.For<IProductDefinitionRepository>();
     private readonly IWorkspaceMemberRepository _members = Substitute.For<IWorkspaceMemberRepository>();
     private readonly IWorkspaceAccessGuard _guard = Substitute.For<IWorkspaceAccessGuard>();
+    private readonly IVerificationChecklistRepository _checklists = Substitute.For<IVerificationChecklistRepository>();
     private readonly LockService _service;
     private readonly InMemoryAuditTrailRepository _auditEntries = new();
     private readonly AuditTrail _audit;
@@ -28,7 +29,7 @@ public class LockServiceTests
     public LockServiceTests()
     {
         _audit = new AuditTrail(_auditEntries);
-        _service = new LockService(_repository, _members, _guard, _audit, Substitute.For<IMapper>());
+        _service = new LockService(_repository, _members, _guard, _audit, _checklists, Substitute.For<IMapper>());
 
         TestData.DependsOn(_b, _a);
         _definition = TestData.Definition(_a, _b);
@@ -104,6 +105,25 @@ public class LockServiceTests
         await Assert.ThrowsAnyAsync<Exception>(() => _service.LockAsync(_userId, _workspaceId));
 
         Assert.Empty(_auditEntries.Entries);
+        await _checklists.DidNotReceiveWithAnyArgs().AddAsync(default!);
+    }
+
+    [Fact]
+    public async Task Lock_AddsTheVersionOneChecklist_ForTheSnapshotItSealed()
+    {
+        MvpSnapshot? saved = null;
+        await _repository.AddSnapshotAsync(Arg.Do<MvpSnapshot>(s => saved = s));
+        VerificationChecklist? added = null;
+        await _checklists.AddAsync(Arg.Do<VerificationChecklist>(c => added = c));
+
+        await _service.LockAsync(_userId, _workspaceId);
+
+        Assert.NotNull(added);
+        Assert.Equal(saved!.Id, added!.MvpSnapshotId);
+        Assert.Equal(_workspaceId, added.WorkspaceId);
+        Assert.Equal(1, added.SnapshotVersion);
+        Assert.Equal(5, added.Items.Count);
+        Assert.False(added.AllItemsChecked);
     }
 
     [Fact]

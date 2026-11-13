@@ -72,11 +72,11 @@ internal sealed class LockWorld
             };
         });
 
-        Lock = new LockService(Definitions, Members, guard, Audit, mapper);
+        Lock = new LockService(Definitions, Members, guard, Audit, Substitute.For<IVerificationChecklistRepository>(), mapper);
         Complexity = new FeatureComplexityService(Definitions, guard, Ai, mapper);
         Assignment = new FeatureAssignmentService(Definitions, Assignments, Members, guard,
             Substitute.For<IGitHubAppService>(), Notifier);
-        Challenge = new FeatureChallengeService(Challenges, Definitions, Assignments, Members, guard, Ai, Audit, Notifier, Substitute.For<IGitHubAppService>(), mapper);
+        Challenge = new FeatureChallengeService(Challenges, Definitions, Assignments, Members, guard, Ai, Audit, Notifier, Substitute.For<IGitHubAppService>(), Substitute.For<IVerificationChecklistRepository>(), mapper);
         DefinitionService = new ProductDefinitionService(Definitions, guard, mapper);
         Review = new FeatureReviewService(Definitions, guard, mapper);
         Analysis = new ProductDefinitionAnalysisService(
