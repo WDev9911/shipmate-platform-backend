@@ -15,6 +15,10 @@ public static class AuditTypes
     public const string ThresholdChanged = "THRESHOLD_CHANGED";
     public const string GovernanceDilution = "GOVERNANCE_DILUTION";
 
+    // VERIFY
+    public const string VerifyItemNotApplicable = "VERIFY_ITEM_NOT_APPLICABLE";
+    public const string VerifyCompleted = "VERIFY_COMPLETED";
+
     // Repository access
     public const string RepoInviteFailed = "REPO_INVITE_FAILED";
     public const string RepoRevokeSkipped = "REPO_REVOKE_SKIPPED";

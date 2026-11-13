@@ -34,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<IFeatureChallengeRepository, FeatureChallengeRepository>();
         services.AddScoped<IBuildSubmissionRepository, BuildSubmissionRepository>();
         services.AddScoped<IDriftAlertRepository, DriftAlertRepository>();
+        services.AddScoped<IVerificationChecklistRepository, VerificationChecklistRepository>();
         services.AddScoped<IAuditTrailRepository, AuditTrailRepository>();
 
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
