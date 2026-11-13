@@ -12,6 +12,8 @@ public enum NextBestActionType
     ClaimFeature,
     // The only work left is held up by another feature; BlockedReason says why.
     Blocked,
+    // Every locked feature of the version is approved, but its Verification Checklist isn't done: shipping waits on it.
+    CompleteVerification,
     // Nothing to suggest right now.
     NoAction
 }
@@ -24,6 +26,9 @@ public static class NextBestActionBlockedReasons
 
     // A feature it depends on has a drift alert nobody has dealt with.
     public const string DependencyDriftUnresolved = "dependency_drift_unresolved";
+
+    // Shipping this version waits for its Verification Checklist. Unlike the two above, no feature holds it up.
+    public const string VerifyChecklistIncomplete = "verify_checklist_incomplete";
 }
 
 public class NextBestActionDto
@@ -39,7 +44,10 @@ public class NextBestActionDto
     // ApproveSubmission
     public Guid? SubmissionId { get; set; }
 
-    // Blocked: why, and the feature it waits for.
+    // Blocked: why, and the feature it waits for. CompleteVerification also sets BlockedReason, with no feature.
     public string? BlockedReason { get; set; }
     public Guid? BlockedByFeatureId { get; set; }
+
+    // CompleteVerification: the version whose checklist is waiting.
+    public int? SnapshotVersion { get; set; }
 }
