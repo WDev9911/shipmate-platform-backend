@@ -23,6 +23,7 @@ public class FeatureChallengeService : IFeatureChallengeService
     private readonly IAuditTrail _auditTrail;
     private readonly IWorkspaceNotifier _notifier;
     private readonly IGitHubAppService _gitHubAppService;
+    private readonly IVerificationChecklistRepository _verificationChecklistRepository;
     private readonly IMapper _mapper;
 
     public FeatureChallengeService(
@@ -35,9 +36,11 @@ public class FeatureChallengeService : IFeatureChallengeService
         IAuditTrail auditTrail,
         IWorkspaceNotifier notifier,
         IGitHubAppService gitHubAppService,
+        IVerificationChecklistRepository verificationChecklistRepository,
         IMapper mapper)
     {
         _gitHubAppService = gitHubAppService;
+        _verificationChecklistRepository = verificationChecklistRepository;
         _challengeRepository = challengeRepository;
         _productDefinitionRepository = productDefinitionRepository;
         _assignmentRepository = assignmentRepository;
@@ -185,6 +188,9 @@ public class FeatureChallengeService : IFeatureChallengeService
 
         next.Hash = MvpSnapshotHasher.Compute(next);
         await _productDefinitionRepository.AddSnapshotAsync(next);
+
+        // Every new version is checked again from scratch.
+        await _verificationChecklistRepository.AddAsync(VerificationChecklist.CreateFor(next));
 
         // Written in the same save as the new snapshot, so a scope change can't happen without its record.
         await _auditTrail.AppendAsync(workspaceId, AuditTypes.ScopeChange, userId, new

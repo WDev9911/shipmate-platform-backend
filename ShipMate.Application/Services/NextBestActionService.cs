@@ -15,6 +15,7 @@ public class NextBestActionService : INextBestActionService
     private readonly IFeatureAssignmentRepository _assignmentRepository;
     private readonly IBuildSubmissionRepository _submissionRepository;
     private readonly IDriftAlertRepository _alertRepository;
+    private readonly IVerificationService _verificationService;
 
     public NextBestActionService(
         IWorkspaceAccessGuard workspaceAccessGuard,
@@ -22,7 +23,8 @@ public class NextBestActionService : INextBestActionService
         IWorkspaceMemberRepository workspaceMemberRepository,
         IFeatureAssignmentRepository assignmentRepository,
         IBuildSubmissionRepository submissionRepository,
-        IDriftAlertRepository alertRepository)
+        IDriftAlertRepository alertRepository,
+        IVerificationService verificationService)
     {
         _workspaceAccessGuard = workspaceAccessGuard;
         _productDefinitionRepository = productDefinitionRepository;
@@ -30,6 +32,7 @@ public class NextBestActionService : INextBestActionService
         _assignmentRepository = assignmentRepository;
         _submissionRepository = submissionRepository;
         _alertRepository = alertRepository;
+        _verificationService = verificationService;
     }
 
     public async Task<NextBestActionDto> GetAsync(Guid userId, Guid workspaceId)
@@ -113,7 +116,40 @@ public class NextBestActionService : INextBestActionService
             }
         }
 
+        // 6. Nothing left to build in this version, but its checklist isn't done: VERIFY is next, and SHIP waits for it.
+        if (await EveryLockedFeatureApprovedAsync(workspaceId, snapshot)
+            && !(await _verificationService.GetReadinessAsync(workspaceId, snapshot.Version)).AllItemsChecked)
+        {
+            return new NextBestActionDto
+            {
+                Action = NextBestActionType.CompleteVerification,
+                BlockedReason = NextBestActionBlockedReasons.VerifyChecklistIncomplete,
+                SnapshotVersion = snapshot.Version
+            };
+        }
+
         return new NextBestActionDto { Action = NextBestActionType.NoAction };
+    }
+
+    // True when the version has locked features and the newest submission of each one is approved.
+    private async Task<bool> EveryLockedFeatureApprovedAsync(Guid workspaceId, MvpSnapshot snapshot)
+    {
+        var locked = snapshot.Features.Where(f => f.Status == SnapshotFeatureStatus.Locked).ToList();
+        if (locked.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var feature in locked)
+        {
+            var newest = await _submissionRepository.GetLatestAsync(workspaceId, feature.FeatureId);
+            if (newest?.Status != BuildSubmissionStatus.Approved)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // The free locked feature that most others wait for, so taking it frees the most work; ties go by name.

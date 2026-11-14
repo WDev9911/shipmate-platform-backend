@@ -24,6 +24,7 @@ public class FeatureChallengeServiceTests
     private readonly IAiGateway _ai = Substitute.For<IAiGateway>();
     private readonly IWorkspaceNotifier _notifier = Substitute.For<IWorkspaceNotifier>();
     private readonly IGitHubAppService _gitHub = Substitute.For<IGitHubAppService>();
+    private readonly IVerificationChecklistRepository _checklists = Substitute.For<IVerificationChecklistRepository>();
     private readonly InMemoryAuditTrailRepository _auditEntries = new();
     private readonly AuditTrail _audit;
     private readonly FeatureChallengeService _service;
@@ -55,7 +56,7 @@ public class FeatureChallengeServiceTests
         });
 
         _audit = new AuditTrail(_auditEntries);
-        _service = new FeatureChallengeService(_challenges, _definitions, _assignments, _members, _guard, _ai, _audit, _notifier, _gitHub, mapper);
+        _service = new FeatureChallengeService(_challenges, _definitions, _assignments, _members, _guard, _ai, _audit, _notifier, _gitHub, _checklists, mapper);
 
         _snapshot = new MvpSnapshot { WorkspaceId = _workspaceId, Version = 1, DevCountAtLock = 1 };
         _snapshot.Features.Add(_a);
@@ -489,6 +490,63 @@ public class FeatureChallengeServiceTests
         Assert.Equal(SnapshotFeatureStatus.Locked, next.Features.Single(f => f.FeatureId == challenge.FeatureId).Status);
         Assert.Equal(_a.FeatureId, challenge.RemovedFeatureId);
         Assert.Equal(SnapshotFeatureStatus.Locked, _a.Status);
+    }
+
+    // ---- approve: the Verification Checklist of the new version ----
+
+    private async Task<(MvpSnapshot Next, VerificationChecklist Added)> ApproveCapturingTheChecklist(
+        FeatureChallenge challenge, ApproveChallengeRequest request)
+    {
+        VerificationChecklist? added = null;
+        await _checklists.AddAsync(Arg.Do<VerificationChecklist>(c => added = c));
+
+        var next = await Approve(challenge, request);
+
+        return (next, added!);
+    }
+
+    [Theory]
+    [InlineData(ChallengeAction.AddDirectly, 2)]
+    [InlineData(ChallengeAction.RemoveAndReplace, 4)]
+    public async Task Approve_AddsAFreshChecklistForTheNewVersion(ChallengeAction action, int complexity)
+    {
+        var challenge = OpenChallenge(complexity);
+
+        var (next, added) = await ApproveCapturingTheChecklist(challenge, new ApproveChallengeRequest
+        {
+            Action = action,
+            RemoveFeatureId = action == ChallengeAction.RemoveAndReplace ? _a.FeatureId : null
+        });
+
+        Assert.NotNull(added);
+        Assert.Equal(next.Id, added.MvpSnapshotId);
+        Assert.Equal(2, added.SnapshotVersion);
+        Assert.Equal(_workspaceId, added.WorkspaceId);
+        Assert.Equal(5, added.Items.Count);
+        Assert.All(added.Items, i => Assert.False(i.Checked));
+    }
+
+    [Fact]
+    public async Task Approve_Backup_AlsoAddsAFreshChecklist()
+    {
+        GivenMembers(Member(_manager, WorkspaceMemberRole.Manager, skill: 3), Member(_developer, WorkspaceMemberRole.Developer, 2));
+        var challenge = OpenChallenge(complexity: 5);
+
+        var (next, added) = await ApproveCapturingTheChecklist(challenge, new ApproveChallengeRequest { Action = ChallengeAction.Backup });
+
+        Assert.Equal(next.Id, added.MvpSnapshotId);
+        Assert.All(added.Items, i => Assert.False(i.Checked));
+    }
+
+    [Fact]
+    public async Task Approve_WhenTheGateFails_AddsNoChecklist()
+    {
+        var challenge = OpenChallenge(complexity: 5);
+
+        await Assert.ThrowsAsync<LockGateFailedException>(() => _service.ApproveAsync(
+            _manager, _workspaceId, challenge.Id, new ApproveChallengeRequest { Action = ChallengeAction.AddDirectly }));
+
+        await _checklists.DidNotReceiveWithAnyArgs().AddAsync(default!);
     }
 
     [Fact]

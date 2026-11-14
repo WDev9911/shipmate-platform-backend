@@ -1188,6 +1188,99 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("ShipMate.Domain.Entities.VerificationChecklist", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("AllItemsChecked")
+                        .HasColumnType("boolean")
+                        .HasColumnName("all_items_checked");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("MvpSnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("mvp_snapshot_id");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.Property<int>("SnapshotVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("snapshot_version");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MvpSnapshotId")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "SnapshotVersion")
+                        .IsUnique();
+
+                    b.ToTable("verification_checklists", (string)null);
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.VerificationChecklistItem", b =>
+                {
+                    b.Property<Guid>("ChecklistId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("checklist_id");
+
+                    b.Property<string>("ItemKey")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("item_key");
+
+                    b.Property<bool>("Applicable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("applicable");
+
+                    b.Property<bool>("Checked")
+                        .HasColumnType("boolean")
+                        .HasColumnName("checked");
+
+                    b.Property<DateTime?>("CheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_at");
+
+                    b.Property<Guid?>("CheckedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("checked_by_user_id");
+
+                    b.Property<string>("NotApplicableReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("not_applicable_reason");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.HasKey("ChecklistId", "ItemKey");
+
+                    b.ToTable("verification_checklist_items", (string)null);
+                });
+
             modelBuilder.Entity("ShipMate.Domain.Entities.Workspace", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1693,6 +1786,34 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.Navigation("Snapshot");
                 });
 
+            modelBuilder.Entity("ShipMate.Domain.Entities.VerificationChecklist", b =>
+                {
+                    b.HasOne("ShipMate.Domain.Entities.MvpSnapshot", "MvpSnapshot")
+                        .WithOne()
+                        .HasForeignKey("ShipMate.Domain.Entities.VerificationChecklist", "MvpSnapshotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ShipMate.Domain.Entities.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MvpSnapshot");
+
+                    b.Navigation("Workspace");
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.VerificationChecklistItem", b =>
+                {
+                    b.HasOne("ShipMate.Domain.Entities.VerificationChecklist", null)
+                        .WithMany("Items")
+                        .HasForeignKey("ChecklistId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ShipMate.Domain.Entities.Workspace", b =>
                 {
                     b.HasOne("ShipMate.Domain.Entities.User", "Owner")
@@ -1753,6 +1874,11 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.Navigation("PasswordResetTokens");
 
                     b.Navigation("RefreshTokens");
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.VerificationChecklist", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

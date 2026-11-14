@@ -18,6 +18,7 @@ public class LockService : ILockService
     private readonly IWorkspaceMemberRepository _workspaceMemberRepository;
     private readonly IWorkspaceAccessGuard _workspaceAccessGuard;
     private readonly IAuditTrail _auditTrail;
+    private readonly IVerificationChecklistRepository _verificationChecklistRepository;
     private readonly IMapper _mapper;
 
     public LockService(
@@ -25,12 +26,14 @@ public class LockService : ILockService
         IWorkspaceMemberRepository workspaceMemberRepository,
         IWorkspaceAccessGuard workspaceAccessGuard,
         IAuditTrail auditTrail,
+        IVerificationChecklistRepository verificationChecklistRepository,
         IMapper mapper)
     {
         _productDefinitionRepository = productDefinitionRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
         _workspaceAccessGuard = workspaceAccessGuard;
         _auditTrail = auditTrail;
+        _verificationChecklistRepository = verificationChecklistRepository;
         _mapper = mapper;
     }
 
@@ -98,6 +101,9 @@ public class LockService : ILockService
 
         snapshot.Hash = MvpSnapshotHasher.Compute(snapshot);
         await _productDefinitionRepository.AddSnapshotAsync(snapshot);
+
+        // VERIFY needs a list for every version, the first one included.
+        await _verificationChecklistRepository.AddAsync(VerificationChecklist.CreateFor(snapshot));
 
         // Written in the same save as the snapshot, so the first Lock can't exist without its record.
         await _auditTrail.AppendAsync(workspaceId, AuditTypes.SnapshotLocked, userId, new

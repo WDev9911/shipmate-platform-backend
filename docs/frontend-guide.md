@@ -177,6 +177,52 @@ Sự kiện SignalR `DriftAlertTriggered` có thêm `trigger` (không kèm `find
 
 **Lưu ý với người dùng:** cổng phạm vi bằng AI mạnh với code lệch rõ nhưng có thể bỏ sót thứ trông vô hại (ví dụ đếm lượt xem trang). Không nên hứa với người dùng rằng "mọi thứ ngoài phạm vi đều bị chặn".
 
+### 2.10. VERIFY: danh sách kiểm tra trước khi ship
+
+Mỗi `snapshot_version` có một checklist 5 mục, tạo tự động cùng lúc snapshot ra đời (lần Lock đầu và mỗi Feature Challenge được duyệt). Checklist của version cũ giữ nguyên; version mới luôn bắt đầu lại từ đầu. Mọi route dưới `api/workspaces/{workspaceId}/verify`, cần đăng nhập và là thành viên đang hoạt động.
+
+| Method | Route | Ai | Việc |
+|---|---|---|---|
+| GET | `checklists` | Thành viên | Danh sách version, mới nhất trước: `version`, `isLatest`, `allItemsChecked`, `missingCount`, `completedAt` |
+| GET | `checklists/{version}` | Thành viên | Chi tiết (bên dưới) |
+| PUT | `checklists/{version}/items/{itemKey}` | Thành viên | Body `{ "checked": true, "note": "…" }`. Tick hoặc bỏ tick. `note` không gửi thì giữ ghi chú cũ, gửi chuỗi trống thì xóa; tối đa 500 ký tự |
+| PUT | `checklists/{version}/items/{itemKey}/applicability` | **Manager** | Body `{ "applicable": false, "reason": "…" }`. Bỏ qua một mục không hợp sản phẩm; `reason` bắt buộc khi `applicable = false` (10 đến 500 ký tự) |
+
+`itemKey` là một trong năm giá trị: `main_user_journey`, `authentication`, `production_config`, `basic_crud`, `error_handling`.
+
+Phản hồi chi tiết (cũng là phản hồi của hai route PUT):
+
+```json
+{
+  "version": 2,
+  "allItemsChecked": false,
+  "completedAt": null,
+  "missingItems": ["basic_crud"],
+  "items": [
+    { "key": "authentication", "applicable": false, "notApplicableReason": "Ứng dụng không có tài khoản",
+      "checked": false, "note": null, "checkedByUserId": null, "checkedAt": null }
+  ],
+  "info": { "openDriftCount": 1, "approvedFeatures": 3, "lockedFeatures": 4 }
+}
+```
+
+- `allItemsChecked` là `true` khi **mọi mục đang áp dụng** đã tick. Mục "không áp dụng" không tính. `missingItems` là các mục còn thiếu, theo thứ tự cố định ở trên.
+- `info` chỉ để hiển thị, **không chặn gì**: `openDriftCount` (cảnh báo drift đang mở của các feature đã khóa trong version), `approvedFeatures` và `lockedFeatures`. "Đã duyệt" nghĩa là submission mới nhất của feature đã được duyệt (bot đã đẩy nhánh feature), chưa chắc đã merge vào `main`.
+- Đánh dấu "không áp dụng" hoặc bật lại một mục sẽ **bỏ tick** mục đó. Mục `main_user_journey` không bỏ qua được.
+- Tick là tự khai: đây là điểm dừng nhắc đội kiểm sản phẩm thật, không phải bằng chứng sản phẩm chạy.
+
+| Mã lỗi | HTTP | Khi nào |
+|---|---|---|
+| `VERIFY_ITEM_UNKNOWN` | 400 | `itemKey` không phải một trong năm mục |
+| `VERIFY_ITEM_NOT_APPLICABLE` | 409 | Tick một mục đang "không áp dụng" |
+| `VERIFY_MAIN_JOURNEY_REQUIRED` | 409 | Bỏ qua `main_user_journey` |
+| `VERIFY_CHECKLIST_CONFLICT` | 409 | Hai người sửa cùng lúc; tải lại rồi làm lại |
+| `NOT_FOUND` | 404 | Version không có checklist, hoặc không phải thành viên |
+| `WORKSPACE_PERMISSION_DENIED` | 403 | Không phải Manager mà đổi "áp dụng" |
+| `VALIDATION_FAILED` | 400 | Thiếu hoặc quá ngắn `reason`; `note` quá dài |
+
+**Next Best Action** có thêm hành động `CompleteVerification` (kèm `blockedReason: "verify_checklist_incomplete"` và `snapshotVersion`) khi mọi feature đã khóa của version đã được duyệt mà checklist chưa xong. Hành động này chỉ hiện khi người gọi **không còn việc code nào**. Chú ý: `blockedReason` từ nay xuất hiện ở **hai** loại hành động: `Blocked` (kèm `blockedByFeatureId`, như cũ) và `CompleteVerification` (không có `blockedByFeatureId`).
+
 ---
 
 ## 3. Luồng GitHub (OAuth) cho Frontend
@@ -392,3 +438,5 @@ Tài khoản mẫu cho DEFINE và LOCK nằm trong `define-demo-data.md` (file *
 - [ ] Ngắt kết nối GitHub xử lý `GITHUB_DISCONNECT_BLOCKED_BY_LINKED_WORKSPACES` bằng lời giải thích.
 - [ ] Mọi chỗ gặp `GITHUB_NOT_CONNECTED` có nút kết nối lại GitHub.
 - [ ] Không dùng `title` để phân loại lỗi (đã đổi theo mã HTTP); chỉ dùng `errorCode`.
+- [ ] Màn hình VERIFY (mục 2.10): danh sách version, tick từng mục, ghi chú, Manager đánh dấu "không áp dụng" kèm lý do; xử lý `VERIFY_CHECKLIST_CONFLICT` bằng cách tải lại.
+- [ ] Next Best Action xử lý hành động `CompleteVerification` và `blockedReason` không kèm `blockedByFeatureId`.

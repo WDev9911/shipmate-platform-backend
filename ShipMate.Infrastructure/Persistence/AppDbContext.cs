@@ -32,6 +32,8 @@ public class AppDbContext : DbContext
     public DbSet<FeatureChallenge> FeatureChallenges => Set<FeatureChallenge>();
     public DbSet<BuildSubmission> BuildSubmissions => Set<BuildSubmission>();
     public DbSet<DriftAlert> DriftAlerts => Set<DriftAlert>();
+    public DbSet<VerificationChecklist> VerificationChecklists => Set<VerificationChecklist>();
+    public DbSet<VerificationChecklistItem> VerificationChecklistItems => Set<VerificationChecklistItem>();
     public DbSet<AuditTrailEntry> AuditTrail => Set<AuditTrailEntry>();
 
     // How many times a save is retried when it lost the race to extend a workspace's audit chain.
@@ -53,6 +55,10 @@ public class AppDbContext : DbContext
             catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is Workspace))
             {
                 throw new ThresholdChangeConflictException();
+            }
+            catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is VerificationChecklist))
+            {
+                throw new VerificationChecklistConflictException();
             }
         }
     }

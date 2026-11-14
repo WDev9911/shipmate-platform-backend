@@ -1,8 +1,10 @@
 using NSubstitute;
 using ShipMate.Application.DTOs.Build;
+using ShipMate.Application.DTOs.Verify;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Application.Interfaces.Services;
 using ShipMate.Application.Services;
+using ShipMate.Domain.Constants;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
 
@@ -16,6 +18,7 @@ public class NextBestActionServiceTests
     private readonly IFeatureAssignmentRepository _assignments = Substitute.For<IFeatureAssignmentRepository>();
     private readonly IBuildSubmissionRepository _submissions = Substitute.For<IBuildSubmissionRepository>();
     private readonly IDriftAlertRepository _alerts = Substitute.For<IDriftAlertRepository>();
+    private readonly IVerificationService _verification = Substitute.For<IVerificationService>();
     private readonly NextBestActionService _service;
 
     private readonly Guid _workspaceId = Guid.NewGuid();
@@ -27,7 +30,11 @@ public class NextBestActionServiceTests
 
     public NextBestActionServiceTests()
     {
-        _service = new NextBestActionService(_guard, _definitions, _members, _assignments, _submissions, _alerts);
+        _service = new NextBestActionService(_guard, _definitions, _members, _assignments, _submissions, _alerts, _verification);
+
+        // Most tests are about the work itself, so the checklist is done unless a test says otherwise.
+        _verification.GetReadinessAsync(default, default).ReturnsForAnyArgs(
+            new VerificationReadiness(true, true, [], DateTime.UtcNow, Guid.NewGuid()));
 
         _snapshot = new MvpSnapshot { WorkspaceId = _workspaceId, Version = 2 };
         _definitions.GetLatestSnapshotAsync(_workspaceId).Returns(_snapshot);
@@ -77,6 +84,88 @@ public class NextBestActionServiceTests
     }
 
     private Task<NextBestActionDto> Ask() => _service.GetAsync(_me, _workspaceId);
+
+    private void ChecklistNotDone(params string[] missing) =>
+        _verification.GetReadinessAsync(_workspaceId, 2).Returns(
+            new VerificationReadiness(true, false, missing, null, Guid.NewGuid()));
+
+    // ---- 6. the Verification Checklist ----
+
+    [Fact]
+    public async Task EverythingApproved_AndChecklistNotDone_SuggestsCompleteVerification()
+    {
+        var mine = Feature("Booking");
+        Assign(mine, _me);
+        Submission(mine, BuildSubmissionStatus.Approved);
+        ChecklistNotDone(VerificationItemKeys.BasicCrud);
+
+        var result = await Ask();
+
+        Assert.Equal(NextBestActionType.CompleteVerification, result.Action);
+        Assert.Equal(NextBestActionBlockedReasons.VerifyChecklistIncomplete, result.BlockedReason);
+        Assert.Equal(2, result.SnapshotVersion);
+        Assert.Null(result.BlockedByFeatureId);
+        Assert.Null(result.FeatureId);
+    }
+
+    [Fact]
+    public async Task EverythingApproved_AndChecklistDone_ReturnsNoAction()
+    {
+        var mine = Feature("Booking");
+        Assign(mine, _me);
+        Submission(mine, BuildSubmissionStatus.Approved);
+
+        Assert.Equal(NextBestActionType.NoAction, (await Ask()).Action);
+    }
+
+    [Fact]
+    public async Task AMemberWithNoFeatureOfTheirOwn_IsPointedAtTheChecklistToo()
+    {
+        var theirs = Feature("Payments");
+        Assign(theirs, _other);
+        Submission(theirs, BuildSubmissionStatus.Approved);
+        ChecklistNotDone();
+
+        Assert.Equal(NextBestActionType.CompleteVerification, (await Ask()).Action);
+    }
+
+    [Fact]
+    public async Task OwnWorkStillComesFirst_BeforeVerification()
+    {
+        var done = Feature("Booking");
+        var todo = Feature("Reports");
+        Assign(done, _me);
+        Assign(todo, _me);
+        Submission(done, BuildSubmissionStatus.Approved);
+        ChecklistNotDone();
+
+        var result = await Ask();
+
+        Assert.Equal(NextBestActionType.WorkOnFeature, result.Action);
+        Assert.Equal(todo.FeatureId, result.FeatureId);
+    }
+
+    [Fact]
+    public async Task WhenAFeatureIsNotApprovedYet_VerificationIsNotSuggested()
+    {
+        var mine = Feature("Booking");
+        var theirs = Feature("Payments");
+        Assign(mine, _me);
+        Assign(theirs, _other);
+        Submission(mine, BuildSubmissionStatus.Approved);
+        ChecklistNotDone();
+
+        Assert.Equal(NextBestActionType.NoAction, (await Ask()).Action);
+    }
+
+    [Fact]
+    public async Task WithNoLockedFeature_VerificationIsNotSuggested()
+    {
+        Feature("Reports", status: SnapshotFeatureStatus.Backup);
+        ChecklistNotDone();
+
+        Assert.Equal(NextBestActionType.NoAction, (await Ask()).Action);
+    }
 
     // ---- nothing to go on ----
 
