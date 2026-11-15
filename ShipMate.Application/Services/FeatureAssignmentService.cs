@@ -16,6 +16,8 @@ public class FeatureAssignmentService : IFeatureAssignmentService
     private readonly IWorkspaceAccessGuard _workspaceAccessGuard;
     private readonly IGitHubAppService _gitHubAppService;
     private readonly IWorkspaceNotifier _notifier;
+    private readonly IBuildSubmissionRepository _submissionRepository;
+    private readonly IDriftAlertRepository _alertRepository;
 
     public FeatureAssignmentService(
         IProductDefinitionRepository productDefinitionRepository,
@@ -23,7 +25,9 @@ public class FeatureAssignmentService : IFeatureAssignmentService
         IWorkspaceMemberRepository workspaceMemberRepository,
         IWorkspaceAccessGuard workspaceAccessGuard,
         IGitHubAppService gitHubAppService,
-        IWorkspaceNotifier notifier)
+        IWorkspaceNotifier notifier,
+        IBuildSubmissionRepository submissionRepository,
+        IDriftAlertRepository alertRepository)
     {
         _productDefinitionRepository = productDefinitionRepository;
         _assignmentRepository = assignmentRepository;
@@ -31,6 +35,8 @@ public class FeatureAssignmentService : IFeatureAssignmentService
         _workspaceAccessGuard = workspaceAccessGuard;
         _gitHubAppService = gitHubAppService;
         _notifier = notifier;
+        _submissionRepository = submissionRepository;
+        _alertRepository = alertRepository;
     }
 
     public async Task<List<FeatureAssignmentOverviewDto>> GetOverviewAsync(Guid userId, Guid workspaceId)
@@ -42,6 +48,15 @@ public class FeatureAssignmentService : IFeatureAssignmentService
         var assignments = (await _assignmentRepository.GetByWorkspaceIdAsync(workspaceId))
             .Where(a => a.ReleasedAt is null)
             .ToDictionary(a => a.FeatureId);
+
+        // Three queries for the whole workspace, however many features it has.
+        var newestByFeature = (await _submissionRepository.GetLatestPerFeatureAsync(workspaceId))
+            .ToDictionary(s => s.FeatureId);
+        var approvalByFeature = (await _submissionRepository.GetLatestApprovalPerFeatureAsync(workspaceId))
+            .ToDictionary(a => a.FeatureId);
+        var alertsByFeature = (await _alertRepository.GetByWorkspaceIdAsync(workspaceId, null))
+            .GroupBy(a => a.FeatureId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.CreatedAt).ToList());
 
         return snapshot.Features
             .Where(f => f.Status != SnapshotFeatureStatus.Replaced)
@@ -58,9 +73,33 @@ public class FeatureAssignmentService : IFeatureAssignmentService
                 QualifiedMembers = members
                     .Where(m => FeatureAssignmentPolicy.IsQualified(m.SkillLevel, feature.Complexity))
                     .Select(m => new QualifiedMemberDto(m.UserId, m.User.DisplayName, m.SkillLevel!.Value))
-                    .ToList()
+                    .ToList(),
+                Build = BuildProgressOf(
+                    newestByFeature.GetValueOrDefault(feature.FeatureId),
+                    approvalByFeature.GetValueOrDefault(feature.FeatureId),
+                    alertsByFeature.GetValueOrDefault(feature.FeatureId) ?? [])
             })
             .ToList();
+    }
+
+    /// <param name="alerts">The feature's alerts, newest first.</param>
+    private static FeatureBuildProgressDto BuildProgressOf(
+        BuildSubmission? newest, ApprovedSubmissionInfo? approval, List<DriftAlert> alerts)
+    {
+        var openAlert = alerts.FirstOrDefault(a => a.IsOpen);
+
+        return new FeatureBuildProgressDto
+        {
+            State = FeatureBuildStatePolicy.Evaluate(newest, openAlert is not null, alerts.FirstOrDefault()?.Status),
+            LatestSubmissionId = newest?.Id,
+            LatestSubmittedAt = newest?.CreatedAt,
+            FailureCode = newest?.Status == BuildSubmissionStatus.Failed ? newest.FailureCode : null,
+            OpenAlertId = openAlert?.Id,
+            LastApproval = approval is null
+                ? null
+                : new FeatureApprovalDto(approval.SubmissionId, approval.ApprovedAt, approval.ApprovedByUserId,
+                    approval.ApprovedByName, approval.ApprovedSha)
+        };
     }
 
     public async Task<FeatureAssignmentDto> ClaimAsync(Guid userId, Guid workspaceId, Guid featureId)

@@ -1,4 +1,5 @@
 using NSubstitute;
+using ShipMate.Application.DTOs.ProductDefinitions;
 using ShipMate.Application.Exceptions;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Application.Interfaces.Services;
@@ -17,6 +18,8 @@ public class FeatureAssignmentTests
     private readonly IWorkspaceAccessGuard _guard = Substitute.For<IWorkspaceAccessGuard>();
     private readonly IGitHubAppService _gitHub = Substitute.For<IGitHubAppService>();
     private readonly IWorkspaceNotifier _notifier = Substitute.For<IWorkspaceNotifier>();
+    private readonly IBuildSubmissionRepository _submissions = Substitute.For<IBuildSubmissionRepository>();
+    private readonly IDriftAlertRepository _alerts = Substitute.For<IDriftAlertRepository>();
     private readonly Workspace _workspace = new();
     private readonly FeatureAssignmentService _service;
     private readonly Guid _workspaceId = Guid.NewGuid();
@@ -26,8 +29,12 @@ public class FeatureAssignmentTests
 
     public FeatureAssignmentTests()
     {
-        _service = new FeatureAssignmentService(_definitions, _assignments, _members, _guard, _gitHub, _notifier);
+        _service = new FeatureAssignmentService(
+            _definitions, _assignments, _members, _guard, _gitHub, _notifier, _submissions, _alerts);
         _guard.GetWorkspaceAsMemberAsync(Arg.Any<Guid>(), _workspaceId).Returns(_workspace);
+        _submissions.GetLatestPerFeatureAsync(_workspaceId).Returns([]);
+        _submissions.GetLatestApprovalPerFeatureAsync(_workspaceId).Returns([]);
+        _alerts.GetByWorkspaceIdAsync(_workspaceId, null).Returns([]);
 
         _me = Member("Me", skill: 3, github: "me-dev");
         _members.GetByWorkspaceIdAsync(_workspaceId).Returns([_me]);
@@ -404,5 +411,136 @@ public class FeatureAssignmentTests
 
         Assert.Equal("Me", overview.Single(o => o.FeatureId == _easy.FeatureId).Assignee!.DisplayName);
         Assert.Null(overview.Single(o => o.FeatureId == _hard.FeatureId).Assignee);
+    }
+
+    // ---- overview: BUILD progress ----
+
+    private static readonly DateTime At8 = new(2026, 11, 15, 8, 0, 0, DateTimeKind.Utc);
+
+    private BuildSubmission Submission(SnapshotFeature feature, BuildSubmissionStatus status, DateTime createdAt) => new()
+    {
+        WorkspaceId = _workspaceId,
+        FeatureId = feature.FeatureId,
+        Status = status,
+        ConfidenceScore = 0.90m,
+        ThresholdAtCheck = 0.75m,
+        CreatedAt = createdAt
+    };
+
+    private async Task<FeatureBuildProgressDto> BuildOf(SnapshotFeature feature) =>
+        (await _service.GetOverviewAsync(_me.UserId, _workspaceId)).Single(o => o.FeatureId == feature.FeatureId).Build;
+
+    [Fact]
+    public async Task Overview_FeatureWithoutSubmissions_IsNotSubmitted()
+    {
+        var build = (await BuildOf(_easy));
+
+        Assert.Equal(FeatureBuildState.NotSubmitted, build.State);
+        Assert.Null(build.LatestSubmissionId);
+        Assert.Null(build.LastApproval);
+        Assert.Null(build.OpenAlertId);
+    }
+
+    [Fact]
+    public async Task Overview_ApprovedFeature_ShowsWhoApprovedAndWhen()
+    {
+        var approved = Submission(_easy, BuildSubmissionStatus.Approved, At8);
+        _submissions.GetLatestPerFeatureAsync(_workspaceId).Returns([approved]);
+        _submissions.GetLatestApprovalPerFeatureAsync(_workspaceId).Returns(
+            [new ApprovedSubmissionInfo(_easy.FeatureId, approved.Id, At8.AddMinutes(5), _me.UserId, "Me", "abc123")]);
+
+        var build = (await BuildOf(_easy));
+
+        Assert.Equal(FeatureBuildState.Approved, build.State);
+        Assert.Equal(approved.Id, build.LatestSubmissionId);
+        Assert.Equal(At8.AddMinutes(5), build.LastApproval!.ApprovedAt);
+        Assert.Equal("Me", build.LastApproval.ApprovedByName);
+        Assert.Equal("abc123", build.LastApproval.ApprovedSha);
+        Assert.Equal(FeatureBuildState.NotSubmitted, (await BuildOf(_hard)).State);
+    }
+
+    [Fact]
+    public async Task Overview_SubmittedAgainAfterApproval_IsAnalyzing_AndKeepsTheEarlierApproval()
+    {
+        var earlier = Submission(_easy, BuildSubmissionStatus.Approved, At8);
+        var newer = Submission(_easy, BuildSubmissionStatus.Analyzing, At8.AddHours(1));
+        _submissions.GetLatestPerFeatureAsync(_workspaceId).Returns([newer]);
+        _submissions.GetLatestApprovalPerFeatureAsync(_workspaceId).Returns(
+            [new ApprovedSubmissionInfo(_easy.FeatureId, earlier.Id, At8.AddMinutes(5), _me.UserId, "Me", "abc123")]);
+
+        var build = (await BuildOf(_easy));
+
+        Assert.Equal(FeatureBuildState.Analyzing, build.State);
+        Assert.Equal(newer.Id, build.LatestSubmissionId);
+        Assert.Equal(earlier.Id, build.LastApproval!.SubmissionId);
+    }
+
+    [Fact]
+    public async Task Overview_ApproverWithoutAccount_KeepsTheApprovalWithoutAName()
+    {
+        var approved = Submission(_easy, BuildSubmissionStatus.Approved, At8);
+        _submissions.GetLatestPerFeatureAsync(_workspaceId).Returns([approved]);
+        _submissions.GetLatestApprovalPerFeatureAsync(_workspaceId).Returns(
+            [new ApprovedSubmissionInfo(_easy.FeatureId, approved.Id, At8, Guid.NewGuid(), null, "abc123")]);
+
+        var build = (await BuildOf(_easy));
+
+        Assert.Equal(FeatureBuildState.Approved, build.State);
+        Assert.Null(build.LastApproval!.ApprovedByName);
+    }
+
+    [Fact]
+    public async Task Overview_OpenDriftAlert_IsDriftUnresolved_AndPointsAtTheAlert()
+    {
+        var drift = Submission(_easy, BuildSubmissionStatus.Drift, At8);
+        drift.ConfidenceScore = 0.40m;
+        var older = new DriftAlert { FeatureId = _easy.FeatureId, Status = DriftAlertStatus.Resolved, CreatedAt = At8.AddHours(-1) };
+        var open = new DriftAlert { FeatureId = _easy.FeatureId, Status = DriftAlertStatus.Acknowledged, CreatedAt = At8 };
+        _submissions.GetLatestPerFeatureAsync(_workspaceId).Returns([drift]);
+        _alerts.GetByWorkspaceIdAsync(_workspaceId, null).Returns([older, open]);
+
+        var build = (await BuildOf(_easy));
+
+        Assert.Equal(FeatureBuildState.DriftUnresolved, build.State);
+        Assert.Equal(open.Id, build.OpenAlertId);
+    }
+
+    [Fact]
+    public async Task Overview_DriftOverriddenByTheManager_IsReadyToApprove()
+    {
+        var drift = Submission(_easy, BuildSubmissionStatus.Drift, At8);
+        drift.ConfidenceScore = 0.40m;
+        _submissions.GetLatestPerFeatureAsync(_workspaceId).Returns([drift]);
+        _alerts.GetByWorkspaceIdAsync(_workspaceId, null).Returns(
+            [new DriftAlert { FeatureId = _easy.FeatureId, Status = DriftAlertStatus.Overridden, CreatedAt = At8 }]);
+
+        var build = (await BuildOf(_easy));
+
+        Assert.Equal(FeatureBuildState.ReadyToApprove, build.State);
+        Assert.Null(build.OpenAlertId);
+    }
+
+    [Fact]
+    public async Task Overview_FailedAnalysis_ShowsTheFailureCode()
+    {
+        var failed = Submission(_easy, BuildSubmissionStatus.Failed, At8);
+        failed.FailureCode = "DIFF_TOO_LARGE";
+        _submissions.GetLatestPerFeatureAsync(_workspaceId).Returns([failed]);
+
+        var build = (await BuildOf(_easy));
+
+        Assert.Equal(FeatureBuildState.Failed, build.State);
+        Assert.Equal("DIFF_TOO_LARGE", build.FailureCode);
+    }
+
+    [Fact]
+    public async Task Overview_ReadsBuildDataOnce_HoweverManyFeatures()
+    {
+        await _service.GetOverviewAsync(_me.UserId, _workspaceId);
+
+        await _submissions.Received(1).GetLatestPerFeatureAsync(_workspaceId);
+        await _submissions.Received(1).GetLatestApprovalPerFeatureAsync(_workspaceId);
+        await _alerts.Received(1).GetByWorkspaceIdAsync(_workspaceId, null);
+        await _submissions.DidNotReceive().GetLatestAsync(Arg.Any<Guid>(), Arg.Any<Guid>());
     }
 }
