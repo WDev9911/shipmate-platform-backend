@@ -223,6 +223,44 @@ Phản hồi chi tiết (cũng là phản hồi của hai route PUT):
 
 **Next Best Action** có thêm hành động `CompleteVerification` (kèm `blockedReason: "verify_checklist_incomplete"` và `snapshotVersion`) khi mọi feature đã khóa của version đã được duyệt mà checklist chưa xong. Hành động này chỉ hiện khi người gọi **không còn việc code nào**. Chú ý: `blockedReason` từ nay xuất hiện ở **hai** loại hành động: `Blocked` (kèm `blockedByFeatureId`, như cũ) và `CompleteVerification` (không có `blockedByFeatureId`).
 
+### 2.11. Tiến độ BUILD của từng feature (thêm trường, không phá API cũ)
+
+`GET /api/workspaces/{id}/assignments` (thành viên đang hoạt động) giữ nguyên các trường cũ và có thêm khối `build` ở **mỗi** feature. Dùng để vẽ bảng "feature → người nhận → đang ở đâu → ai duyệt".
+
+```json
+{
+  "featureId": "…", "name": "Đặt lịch khám online", "status": "Locked", "complexity": 3,
+  "assignee": { "userId": "…", "displayName": "Dev Test", "branchName": "feature/…", "branchCreated": true },
+  "qualifiedMembers": [ … ],
+  "build": {
+    "state": "Analyzing",
+    "latestSubmissionId": "…",
+    "latestSubmittedAt": "2026-11-15T09:00:00Z",
+    "failureCode": null,
+    "openAlertId": null,
+    "lastApproval": {
+      "submissionId": "…", "approvedAt": "2026-11-15T08:05:00Z",
+      "approvedByUserId": "…", "approvedByName": "Dev Test", "approvedSha": "a1b2c3…"
+    }
+  }
+}
+```
+
+| `state` | Nghĩa | Gợi ý hiển thị |
+|---|---|---|
+| `NotSubmitted` | Chưa submit lần nào | "Chưa bắt đầu" |
+| `Analyzing` | AI đang phân tích lần submit mới nhất | Spinner |
+| `Failed` | Phân tích lỗi, xem `failureCode` (ví dụ `DIFF_TOO_LARGE`) | Báo lỗi, nhắc submit lại |
+| `DriftUnresolved` | Code lệch scope, chưa ai xử lý | Đỏ; mở alert bằng `openAlertId` (có thể `null` khi alert đã xử lý mà lần submit đó vẫn cần Manager override) |
+| `ReadyToApprove` | Đã qua kiểm tra, chờ người giữ feature bấm Duyệt | Vàng |
+| `Approved` | Lần submit mới nhất đã được duyệt: bot đã đẩy code sang nhánh `feature/...` | Xanh |
+
+- **"Đã duyệt" không có nghĩa là đã vào `main`.** ShipMate không ghi lại lúc merge PR trên GitHub.
+- `lastApproval` là lần duyệt **gần nhất**, có thể cũ hơn lần submit mới nhất. Ví dụ ở trên: duyệt lúc 8:05, submit thêm lúc 9:00 nên `state` là `Analyzing`, nhưng vẫn hiện được "đã duyệt lúc 8:05". `null` nếu chưa từng được duyệt. `approvedByName` có thể `null` (hiếm, khi tài khoản không còn).
+- Số feature `Approved` trong danh sách này luôn bằng `info.approvedFeatures` của VERIFY (mục 2.10), vì cả hai dùng cùng định nghĩa.
+- Không có `findings` hay gợi ý của AI ở đây. Xem chi tiết bằng `GET .../build/submissions/{latestSubmissionId}`.
+- **Tải lại** `GET .../assignments` khi nhận các sự kiện SignalR `AnalysisCompleted`, `DriftAlertTriggered`, `ManagerOverrideExecuted`, `CodeScopeApproved`. Lúc dev vừa submit thì **chưa có** sự kiện nào; người khác sẽ thấy `Analyzing` chuyển thẳng sang kết quả khi phân tích xong (thường 5–15 giây).
+
 ---
 
 ## 3. Luồng GitHub (OAuth) cho Frontend

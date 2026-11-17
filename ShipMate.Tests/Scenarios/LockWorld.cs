@@ -74,8 +74,13 @@ internal sealed class LockWorld
 
         Lock = new LockService(Definitions, Members, guard, Audit, Substitute.For<IVerificationChecklistRepository>(), mapper);
         Complexity = new FeatureComplexityService(Definitions, guard, Ai, mapper);
+        var submissions = Substitute.For<IBuildSubmissionRepository>();
+        submissions.GetLatestPerFeatureAsync(Arg.Any<Guid>()).Returns([]);
+        submissions.GetLatestApprovalPerFeatureAsync(Arg.Any<Guid>()).Returns([]);
+        var alerts = Substitute.For<IDriftAlertRepository>();
+        alerts.GetByWorkspaceIdAsync(Arg.Any<Guid>(), Arg.Any<DriftAlertStatus?>()).Returns([]);
         Assignment = new FeatureAssignmentService(Definitions, Assignments, Members, guard,
-            Substitute.For<IGitHubAppService>(), Notifier);
+            Substitute.For<IGitHubAppService>(), Notifier, submissions, alerts);
         Challenge = new FeatureChallengeService(Challenges, Definitions, Assignments, Members, guard, Ai, Audit, Notifier, Substitute.For<IGitHubAppService>(), Substitute.For<IVerificationChecklistRepository>(), mapper);
         DefinitionService = new ProductDefinitionService(Definitions, guard, mapper);
         Review = new FeatureReviewService(Definitions, guard, mapper);
