@@ -998,6 +998,192 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.ToTable("refresh_tokens", (string)null);
                 });
 
+            modelBuilder.Entity("ShipMate.Domain.Entities.ShipAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("failure_code");
+
+                    b.Property<string>("OwnershipError")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("ownership_error");
+
+                    b.Property<bool>("OwnershipVerified")
+                        .HasColumnType("boolean")
+                        .HasColumnName("ownership_verified");
+
+                    b.Property<string>("PingError")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("ping_error");
+
+                    b.Property<int?>("PingStatusCode")
+                        .HasColumnType("integer")
+                        .HasColumnName("ping_status_code");
+
+                    b.Property<int>("SnapshotVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("snapshot_version");
+
+                    b.Property<string>("SslError")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("ssl_error");
+
+                    b.Property<DateTime?>("SslExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ssl_expires_at");
+
+                    b.Property<bool>("SslValid")
+                        .HasColumnType("boolean")
+                        .HasColumnName("ssl_valid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(13)
+                        .HasColumnType("character varying(13)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("url");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "CreatedAt");
+
+                    b.ToTable("ship_attempts", (string)null);
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.ShipCard", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AuditAnchorHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("audit_anchor_hash");
+
+                    b.Property<long>("AuditAnchorSequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("audit_anchor_sequence");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsPublic")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_public");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("product_name");
+
+                    b.Property<string>("PublicSlug")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("public_slug");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("integer")
+                        .HasColumnName("score");
+
+                    b.Property<string>("ScoreBreakdown")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("score_breakdown");
+
+                    b.Property<string>("ScoreFormulaVersion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("score_formula_version");
+
+                    b.Property<Guid>("ShipAttemptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ship_attempt_id");
+
+                    b.Property<DateTime>("ShippedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("shipped_at");
+
+                    b.Property<Guid>("ShippedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("shipped_by_user_id");
+
+                    b.Property<int>("SnapshotVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("snapshot_version");
+
+                    b.Property<long>("TimeToShipSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("time_to_ship_seconds");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("url");
+
+                    b.Property<Guid>("VerificationChecklistId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("verification_checklist_id");
+
+                    b.Property<DateTime>("VerificationCompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("verification_completed_at");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicSlug")
+                        .IsUnique();
+
+                    b.HasIndex("ShipAttemptId")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "SnapshotVersion")
+                        .IsUnique();
+
+                    b.ToTable("ship_cards", (string)null);
+                });
+
             modelBuilder.Entity("ShipMate.Domain.Entities.SnapshotDependency", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1356,6 +1542,12 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid")
                         .HasColumnName("owner_id");
+
+                    b.Property<string>("ShipOwnershipToken")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("ship_ownership_token");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -1762,6 +1954,34 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.ShipAttempt", b =>
+                {
+                    b.HasOne("ShipMate.Domain.Entities.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
+                });
+
+            modelBuilder.Entity("ShipMate.Domain.Entities.ShipCard", b =>
+                {
+                    b.HasOne("ShipMate.Domain.Entities.ShipAttempt", null)
+                        .WithOne()
+                        .HasForeignKey("ShipMate.Domain.Entities.ShipCard", "ShipAttemptId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShipMate.Domain.Entities.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("ShipMate.Domain.Entities.SnapshotDependency", b =>

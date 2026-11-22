@@ -54,6 +54,7 @@ public class WorkspaceConfiguration : IEntityTypeConfiguration<Workspace>
             .IsConcurrencyToken();
 
         builder.Property(w => w.FirstLockedAt).HasColumnName("first_locked_at");
+        builder.Property(w => w.ShipOwnershipToken).HasColumnName("ship_ownership_token").HasMaxLength(64).IsRequired();
 
         builder.Property(w => w.CreatedAt).HasColumnName("created_at");
         builder.Property(w => w.UpdatedAt).HasColumnName("updated_at");

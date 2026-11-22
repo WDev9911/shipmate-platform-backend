@@ -19,6 +19,7 @@ public class NextBestActionServiceTests
     private readonly IBuildSubmissionRepository _submissions = Substitute.For<IBuildSubmissionRepository>();
     private readonly IDriftAlertRepository _alerts = Substitute.For<IDriftAlertRepository>();
     private readonly IVerificationService _verification = Substitute.For<IVerificationService>();
+    private readonly IShipCardRepository _shipCards = Substitute.For<IShipCardRepository>();
     private readonly NextBestActionService _service;
 
     private readonly Guid _workspaceId = Guid.NewGuid();
@@ -30,7 +31,7 @@ public class NextBestActionServiceTests
 
     public NextBestActionServiceTests()
     {
-        _service = new NextBestActionService(_guard, _definitions, _members, _assignments, _submissions, _alerts, _verification);
+        _service = new NextBestActionService(_guard, _definitions, _members, _assignments, _submissions, _alerts, _verification, _shipCards);
 
         // Most tests are about the work itself, so the checklist is done unless a test says otherwise.
         _verification.GetReadinessAsync(default, default).ReturnsForAnyArgs(
@@ -113,6 +114,74 @@ public class NextBestActionServiceTests
     {
         var mine = Feature("Booking");
         Assign(mine, _me);
+        Submission(mine, BuildSubmissionStatus.Approved);
+
+        Assert.Equal(NextBestActionType.NoAction, (await Ask()).Action);
+    }
+
+    // ---- 7. shipping ----
+
+    private void IAmManager() =>
+        _members.GetByWorkspaceAndUserIdAsync(_workspaceId, _me)
+            .Returns(new WorkspaceMember { SkillLevel = 3, Role = WorkspaceMemberRole.Manager });
+
+    [Fact]
+    public async Task BuiltAndVerified_TheManagerIsToldToShip()
+    {
+        IAmManager();
+        var mine = Feature("Booking");
+        Assign(mine, _me);
+        Submission(mine, BuildSubmissionStatus.Approved);
+
+        var result = await Ask();
+
+        Assert.Equal(NextBestActionType.ShipVersion, result.Action);
+        Assert.Equal(2, result.SnapshotVersion);
+        Assert.Null(result.FeatureId);
+    }
+
+    [Fact]
+    public async Task BuiltAndVerified_ADeveloperHasNothingToDo_ShippingIsTheManagers()
+    {
+        var mine = Feature("Booking");
+        Assign(mine, _me);
+        Submission(mine, BuildSubmissionStatus.Approved);
+
+        Assert.Equal(NextBestActionType.NoAction, (await Ask()).Action);
+    }
+
+    [Fact]
+    public async Task AlreadyShipped_NothingIsLeft()
+    {
+        IAmManager();
+        var mine = Feature("Booking");
+        Assign(mine, _me);
+        Submission(mine, BuildSubmissionStatus.Approved);
+        _shipCards.ExistsAsync(_workspaceId, 2).Returns(true);
+
+        Assert.Equal(NextBestActionType.NoAction, (await Ask()).Action);
+    }
+
+    [Fact]
+    public async Task TheChecklistComesBeforeShipping_EvenForTheManager()
+    {
+        IAmManager();
+        var mine = Feature("Booking");
+        Assign(mine, _me);
+        Submission(mine, BuildSubmissionStatus.Approved);
+        ChecklistNotDone(VerificationItemKeys.ErrorHandling);
+
+        Assert.Equal(NextBestActionType.CompleteVerification, (await Ask()).Action);
+    }
+
+    [Fact]
+    public async Task AFeatureNotApprovedYet_ShippingIsNotSuggested()
+    {
+        IAmManager();
+        var mine = Feature("Booking");
+        var theirs = Feature("Payments");
+        Assign(mine, _me);
+        Assign(theirs, _other);
         Submission(mine, BuildSubmissionStatus.Approved);
 
         Assert.Equal(NextBestActionType.NoAction, (await Ask()).Action);

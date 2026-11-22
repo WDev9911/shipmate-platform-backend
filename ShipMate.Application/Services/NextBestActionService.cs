@@ -16,6 +16,7 @@ public class NextBestActionService : INextBestActionService
     private readonly IBuildSubmissionRepository _submissionRepository;
     private readonly IDriftAlertRepository _alertRepository;
     private readonly IVerificationService _verificationService;
+    private readonly IShipCardRepository _shipCardRepository;
 
     public NextBestActionService(
         IWorkspaceAccessGuard workspaceAccessGuard,
@@ -24,8 +25,10 @@ public class NextBestActionService : INextBestActionService
         IFeatureAssignmentRepository assignmentRepository,
         IBuildSubmissionRepository submissionRepository,
         IDriftAlertRepository alertRepository,
-        IVerificationService verificationService)
+        IVerificationService verificationService,
+        IShipCardRepository shipCardRepository)
     {
+        _shipCardRepository = shipCardRepository;
         _workspaceAccessGuard = workspaceAccessGuard;
         _productDefinitionRepository = productDefinitionRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
@@ -116,16 +119,25 @@ public class NextBestActionService : INextBestActionService
             }
         }
 
-        // 6. Nothing left to build in this version, but its checklist isn't done: VERIFY is next, and SHIP waits for it.
-        if (await EveryLockedFeatureApprovedAsync(workspaceId, snapshot)
-            && !(await _verificationService.GetReadinessAsync(workspaceId, snapshot.Version)).AllItemsChecked)
+        if (await EveryLockedFeatureApprovedAsync(workspaceId, snapshot))
         {
-            return new NextBestActionDto
+            // 6. Nothing left to build in this version, but its checklist isn't done: VERIFY is next, and SHIP waits for it.
+            if (!(await _verificationService.GetReadinessAsync(workspaceId, snapshot.Version)).AllItemsChecked)
             {
-                Action = NextBestActionType.CompleteVerification,
-                BlockedReason = NextBestActionBlockedReasons.VerifyChecklistIncomplete,
-                SnapshotVersion = snapshot.Version
-            };
+                return new NextBestActionDto
+                {
+                    Action = NextBestActionType.CompleteVerification,
+                    BlockedReason = NextBestActionBlockedReasons.VerifyChecklistIncomplete,
+                    SnapshotVersion = snapshot.Version
+                };
+            }
+
+            // 7. Built and verified: the last step is the Manager's, shipping it.
+            if (membership?.Role == WorkspaceMemberRole.Manager
+                && !await _shipCardRepository.ExistsAsync(workspaceId, snapshot.Version))
+            {
+                return new NextBestActionDto { Action = NextBestActionType.ShipVersion, SnapshotVersion = snapshot.Version };
+            }
         }
 
         return new NextBestActionDto { Action = NextBestActionType.NoAction };

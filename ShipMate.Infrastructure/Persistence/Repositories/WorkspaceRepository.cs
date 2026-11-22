@@ -17,6 +17,9 @@ public class WorkspaceRepository : IWorkspaceRepository
     public async Task<Workspace?> GetByIdAsync(Guid id) =>
         await _context.Workspaces.FirstOrDefaultAsync(w => w.Id == id);
 
+    public async Task<Workspace?> GetCurrentAsync(Guid id) =>
+        await _context.Workspaces.AsNoTracking().FirstOrDefaultAsync(w => w.Id == id);
+
     public async Task<List<Workspace>> GetByMemberUserIdAsync(Guid userId) =>
         await _context.Workspaces
             .Where(w => _context.WorkspaceMembers.Any(m =>

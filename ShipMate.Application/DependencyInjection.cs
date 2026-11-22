@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<IDriftThresholdService, DriftThresholdService>();
         services.AddScoped<IWorkspaceSetupService, WorkspaceSetupService>();
         services.AddScoped<IVerificationService, VerificationService>();
+        services.AddScoped<IShipService, ShipService>();
         services.AddScoped<INextBestActionService, NextBestActionService>();
         services.AddScoped<IAuditTrail, AuditTrail>();
         services.AddSingleton<BuildAnalysisQueue>();

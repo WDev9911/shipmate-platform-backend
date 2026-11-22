@@ -113,7 +113,8 @@ public class VerificationService : IVerificationService
 
     public async Task<VerificationReadiness> GetReadinessAsync(Guid workspaceId, int version)
     {
-        var checklist = await _checklistRepository.GetByVersionAsync(workspaceId, version);
+        // Read fresh: SHIP asks again right before minting a card, and must see a tick taken back in the meantime.
+        var checklist = await _checklistRepository.GetCurrentByVersionAsync(workspaceId, version);
         if (checklist is null)
         {
             return VerificationReadiness.Missing;
