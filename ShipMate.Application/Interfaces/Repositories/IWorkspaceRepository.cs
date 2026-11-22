@@ -6,6 +6,9 @@ public interface IWorkspaceRepository
 {
     Task<Workspace?> GetByIdAsync(Guid id);
 
+    /// <summary>Read fresh and not tracked: the workspace as the database holds it now, even if this request already loaded it.</summary>
+    Task<Workspace?> GetCurrentAsync(Guid id);
+
     /// <summary>Workspaces this user is an active member of (includes ones they own).</summary>
     Task<List<Workspace>> GetByMemberUserIdAsync(Guid userId);
 
