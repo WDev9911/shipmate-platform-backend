@@ -14,6 +14,8 @@ public enum NextBestActionType
     Blocked,
     // Every locked feature of the version is approved, but its Verification Checklist isn't done: shipping waits on it.
     CompleteVerification,
+    // Manager only: the version is built and verified but not shipped yet.
+    ShipVersion,
     // Nothing to suggest right now.
     NoAction
 }
@@ -48,6 +50,6 @@ public class NextBestActionDto
     public string? BlockedReason { get; set; }
     public Guid? BlockedByFeatureId { get; set; }
 
-    // CompleteVerification: the version whose checklist is waiting.
+    // CompleteVerification: the version whose checklist is waiting. ShipVersion: the version to ship.
     public int? SnapshotVersion { get; set; }
 }
