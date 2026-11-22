@@ -8,6 +8,8 @@ Kế hoạch cài đặt VERIFY, viết trước khi code, cùng cách làm vớ
 - Test: 3 tệp mới (`VerificationChecklistTests` 15, `VerificationServiceTests` 23, `VerifyRequestValidatorTests` 7), 4 test mới ở `FeatureChallengeServiceTests`, 1 ở `LockServiceTests`, 6 ở `NextBestActionServiceTests` (tổng cộng thêm 56 test, nhiều hơn dự kiến 38 vì tách nhỏ hơn).
 - Đã thêm mục 2.10 vào `docs/frontend-guide.md`.
 
+**Cập nhật từ SHIP (2026-11-22).** `GetReadinessAsync` giờ đọc checklist bằng `IVerificationChecklistRepository.GetCurrentByVersionAsync` (đọc mới từ DB, không theo dõi, không nạp feature của snapshot) thay cho `GetByVersionAsync`. Lý do: SHIP hỏi lại ngay trước khi cấp thẻ và phải thấy một mục vừa bị bỏ tick. Hợp đồng và kết quả cho SHIP và NBA không đổi. Xem `05-ship.md` mục 3.
+
 **Bản gọn (2026-11-13).** Bản trước có thêm quy tắc "lỗi thời", kế thừa tick giữa các version và việc dọn `HasOpenDriftAsync`. Ba thứ đó được dời sang mục 15 ("Để sau"), kèm lý do. Quy tắc lỗi thời còn dựa trên một giả định sai: duyệt submission **không** đưa code vào `main` (xem mục 15).
 
 Mục lục
