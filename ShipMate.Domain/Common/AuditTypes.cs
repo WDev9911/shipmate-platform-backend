@@ -19,6 +19,9 @@ public static class AuditTypes
     public const string VerifyItemNotApplicable = "VERIFY_ITEM_NOT_APPLICABLE";
     public const string VerifyCompleted = "VERIFY_COMPLETED";
 
+    // SHIP
+    public const string ShipCardMinted = "SHIP_CARD_MINTED";
+
     // Repository access
     public const string RepoInviteFailed = "REPO_INVITE_FAILED";
     public const string RepoRevokeSkipped = "REPO_REVOKE_SKIPPED";
