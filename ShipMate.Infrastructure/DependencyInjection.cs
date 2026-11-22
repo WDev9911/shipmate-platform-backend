@@ -11,6 +11,7 @@ using ShipMate.Infrastructure.Security;
 using ShipMate.Infrastructure.Services;
 using ShipMate.Infrastructure.Services.Ai;
 using ShipMate.Infrastructure.Services.GitHub;
+using ShipMate.Infrastructure.Services.Ship;
 
 namespace ShipMate.Infrastructure;
 
@@ -35,6 +36,8 @@ public static class DependencyInjection
         services.AddScoped<IBuildSubmissionRepository, BuildSubmissionRepository>();
         services.AddScoped<IDriftAlertRepository, DriftAlertRepository>();
         services.AddScoped<IVerificationChecklistRepository, VerificationChecklistRepository>();
+        services.AddScoped<IShipAttemptRepository, ShipAttemptRepository>();
+        services.AddScoped<IShipCardRepository, ShipCardRepository>();
         services.AddScoped<IAuditTrailRepository, AuditTrailRepository>();
 
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
@@ -58,6 +61,11 @@ public static class DependencyInjection
         services.AddHttpClient<IGitHubOAuthService, GitHubOAuthService>();
         services.AddHttpClient<IGitHubAppService, GitHubAppService>();
         services.AddHostedService<BuildAnalysisWorker>();
+
+        // Not through IHttpClientFactory: each check needs its own handler, which only connects to public addresses
+        // and records the certificates it sees.
+        services.AddSingleton<IHostAddressResolver, DnsHostAddressResolver>();
+        services.AddSingleton<IProductionUrlChecker>(sp => new ProductionUrlChecker(sp.GetRequiredService<IHostAddressResolver>()));
 
         services.Configure<GeminiOptions>(configuration.GetSection(GeminiOptions.SectionName));
         services.AddHttpClient<IAiGateway, GeminiAiGateway>((serviceProvider, client) =>
