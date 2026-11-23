@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using ShipMate.Domain.Entities;
-using ShipMate.Domain.Policies;
 
 namespace ShipMate.Infrastructure.Persistence.Configurations;
 
@@ -26,14 +25,7 @@ public class PlatformSettingsConfiguration : IEntityTypeConfiguration<PlatformSe
         builder.Property(s => s.UpdatedAt).HasColumnName("updated_at");
         builder.Property(s => s.UpdatedByUserId).HasColumnName("updated_by_user_id");
 
-        // Constants only: a value that changes (such as the current time) would make every new migration touch this row.
-        builder.HasData(new PlatformSettings
-        {
-            Id = PlatformSettings.SingleRowId,
-            ComplexityBudgetPerDeveloper = PlatformSettings.InitialComplexityBudgetPerDeveloper,
-            DefaultDriftThreshold = PlatformSettings.InitialDriftThreshold,
-            MaintenanceCommitPatterns = MaintenanceChangePolicy.DefaultPatterns.ToList(),
-            Revision = 0
-        });
+        // No HasData: EF can't compare a seeded text[] (List<string>) with the snapshot and would add an UpdateData of
+        // this row to every later migration. The row is inserted once by the AdminAccountsAndPlatformSettings migration.
     }
 }

@@ -950,16 +950,6 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("ck_platform_settings_single_row", "id = 1");
                         });
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            ComplexityBudgetPerDeveloper = 10,
-                            DefaultDriftThreshold = 0.75m,
-                            MaintenanceCommitPatterns = new List<string> { "fix typo", "refactor", "bump version", "format code" },
-                            Revision = 0
-                        });
                 });
 
             modelBuilder.Entity("ShipMate.Domain.Entities.ProductDefinition", b =>
