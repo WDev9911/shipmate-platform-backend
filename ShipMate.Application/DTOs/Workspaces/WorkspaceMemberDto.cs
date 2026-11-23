@@ -13,6 +13,9 @@ public class WorkspaceMemberDto
     public int? SkillLevel { get; set; }
     public DateTime CreatedAt { get; set; }
 
+    /// <summary>The person's account is locked or removed, so they can't take part. The Manager can remove them.</summary>
+    public bool AccountLocked { get; set; }
+
     /// <summary>Only set when accepting an invitation: "sent", "alreadyHasAccess", "failed" or "noRepo".</summary>
     public string? RepoInvite { get; set; }
 }

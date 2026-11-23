@@ -15,30 +15,36 @@ public class AdminService : IAdminService
     private readonly IUserRepository _userRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IAdminActionLogRepository _adminActionLogRepository;
+    private readonly IWorkspaceNotifier _notifier;
+    private readonly IEmailSender _emailSender;
     private readonly IMapper _mapper;
 
     public AdminService(
         IUserRepository userRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IAdminActionLogRepository adminActionLogRepository,
+        IWorkspaceNotifier notifier,
+        IEmailSender emailSender,
         IMapper mapper)
     {
         _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _adminActionLogRepository = adminActionLogRepository;
+        _notifier = notifier;
+        _emailSender = emailSender;
         _mapper = mapper;
     }
 
-    public async Task<PagedResult<AdminUserListItemDto>> GetUsersAsync(int page, int pageSize)
+    public async Task<PagedResult<AdminUserListItemDto>> GetUsersAsync(AdminUserQuery query)
     {
-        var (users, totalCount) = await _userRepository.GetPagedAsync(page, pageSize);
+        var (users, totalCount) = await _userRepository.GetPagedAsync(query);
 
         return new PagedResult<AdminUserListItemDto>
         {
             Items = _mapper.Map<List<AdminUserListItemDto>>(users),
             TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize
+            Page = query.Page,
+            PageSize = query.PageSize
         };
     }
 
@@ -51,6 +57,24 @@ public class AdminService : IAdminService
 
         var user = await _userRepository.GetByIdAsync(targetUserId)
             ?? throw new NotFoundException("User", targetUserId);
+
+        // Administrators are not managed from here: two of them locking each other at the same moment would leave
+        // nobody to undo it, and a count can't prevent that. A new administrator comes from AdminSeed, not from a role change.
+        if (user.Role == UserRole.Administrator)
+        {
+            throw new AdminAccountProtectedException();
+        }
+
+        // A removed account is gone for good, so this comes before "no change".
+        if (user.Status == UserStatus.Removed)
+        {
+            throw new AccountRemovedFinalException();
+        }
+
+        if (user.Status == newStatus)
+        {
+            throw new NoChangeException();
+        }
 
         var oldStatus = user.Status;
         user.Status = newStatus;
@@ -79,34 +103,12 @@ public class AdminService : IAdminService
 
         await _userRepository.SaveChangesAsync();
 
-        return _mapper.Map<UserDto>(user);
-    }
-
-    public async Task<UserDto> UpdateUserRoleAsync(Guid adminUserId, Guid targetUserId, UserRole newRole)
-    {
-        if (adminUserId == targetUserId)
+        if (newStatus != UserStatus.Active)
         {
-            throw new SelfActionNotAllowedException();
+            // After the save, so a connection can't be cut for a lock that then failed to be stored.
+            await _notifier.DisconnectUserAsync(targetUserId);
+            await NotifyAccountClosedAsync(user, newStatus);
         }
-
-        var user = await _userRepository.GetByIdAsync(targetUserId)
-            ?? throw new NotFoundException("User", targetUserId);
-
-        var oldRole = user.Role;
-        user.Role = newRole;
-        user.UpdatedAt = DateTime.UtcNow;
-        _userRepository.Update(user);
-
-        await _adminActionLogRepository.AddAsync(new AdminActionLog
-        {
-            AdminUserId = adminUserId,
-            TargetUserId = targetUserId,
-            Action = AdminAction.RoleChanged,
-            OldValue = oldRole.ToString(),
-            NewValue = newRole.ToString()
-        });
-
-        await _userRepository.SaveChangesAsync();
 
         return _mapper.Map<UserDto>(user);
     }
@@ -148,5 +150,46 @@ public class AdminService : IAdminService
                 })
                 .ToList()
         };
+    }
+
+    public async Task<PagedResult<AdminActionLogDto>> GetActionLogsAsync(AdminActionLogQuery query)
+    {
+        var (logs, totalCount) = await _adminActionLogRepository.GetPagedAsync(query);
+
+        return new PagedResult<AdminActionLogDto>
+        {
+            Items = logs.Select(l => new AdminActionLogDto
+            {
+                Id = l.Id,
+                AdminUserId = l.AdminUserId,
+                AdminEmail = l.AdminUser.Email,
+                AdminDisplayName = l.AdminUser.DisplayName,
+                TargetUserId = l.TargetUserId,
+                TargetEmail = l.TargetUser?.Email,
+                Action = l.Action,
+                Subject = l.Subject,
+                OldValue = l.OldValue,
+                NewValue = l.NewValue,
+                CreatedAt = l.CreatedAt
+            }).ToList(),
+            TotalCount = totalCount,
+            Page = query.Page,
+            PageSize = query.PageSize
+        };
+    }
+
+    // A person who can't sign in can't read a message in the app, so this goes by email whatever their preference is.
+    // A mail that fails to send never undoes the lock.
+    private Task NotifyAccountClosedAsync(User user, UserStatus newStatus)
+    {
+        var what = newStatus == UserStatus.Removed ? "removed" : "locked";
+        return _emailSender.TrySendAsync(
+            user.Email,
+            $"Your ShipMate account has been {what}",
+            $"""
+             <p>Hi {user.DisplayName},</p>
+             <p>Your ShipMate account was just {what} by an administrator, so you can no longer sign in.</p>
+             <p>If you think this is a mistake, please contact the platform administrator.</p>
+             """);
     }
 }

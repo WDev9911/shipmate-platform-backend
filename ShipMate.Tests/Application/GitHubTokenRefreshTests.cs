@@ -45,7 +45,7 @@ public class GitHubTokenRefreshTests
             _workspaces, Substitute.For<IWorkspaceMemberRepository>(), guard,
             Substitute.For<IProductDefinitionRepository>(), Substitute.For<IUserRepository>(),
             _connections, _oauth, Substitute.For<IGitHubAppService>(), _encryption, Substitute.For<IEmailSender>(),
-            Substitute.For<IWorkspaceNotifier>(), Substitute.For<IAuditTrail>(), Substitute.For<IFeatureAssignmentRepository>(), Substitute.For<IMapper>());
+            Substitute.For<IWorkspaceNotifier>(), Substitute.For<IAuditTrail>(), Substitute.For<IFeatureAssignmentRepository>(), Substitute.For<IPlatformSettingsRepository>(), Substitute.For<IMapper>());
     }
 
     private Task<List<GitHubRepoDto>> ListRepos() => _service.GetAvailableGitHubReposAsync(_managerId, _workspaceId);

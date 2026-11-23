@@ -8,6 +8,9 @@ public interface IWorkspaceNotifier
 
     /// <summary>To specific people, on every connection they have open, whichever workspace they are looking at.</summary>
     Task PublishToUsersAsync(IEnumerable<Guid> userIds, string eventName, object payload);
+
+    /// <summary>Closes every connection a person has open, e.g. when their account is locked.</summary>
+    Task DisconnectUserAsync(Guid userId);
 }
 
 /// <summary>The names of the events clients listen for. Fixed by the spec except where noted.</summary>

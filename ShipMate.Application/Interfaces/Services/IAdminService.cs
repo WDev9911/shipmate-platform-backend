@@ -7,8 +7,8 @@ namespace ShipMate.Application.Interfaces.Services;
 
 public interface IAdminService
 {
-    Task<PagedResult<AdminUserListItemDto>> GetUsersAsync(int page, int pageSize);
+    Task<PagedResult<AdminUserListItemDto>> GetUsersAsync(AdminUserQuery query);
     Task<UserDto> UpdateUserStatusAsync(Guid adminUserId, Guid targetUserId, UserStatus newStatus);
-    Task<UserDto> UpdateUserRoleAsync(Guid adminUserId, Guid targetUserId, UserRole newRole);
     Task<UserActivityResponse> GetUserActivityAsync(Guid targetUserId);
+    Task<PagedResult<AdminActionLogDto>> GetActionLogsAsync(AdminActionLogQuery query);
 }

@@ -9,6 +9,7 @@ using ShipMate.Application.Interfaces.Services;
 using ShipMate.Application.Services;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
+using ShipMate.Domain.Policies;
 using ShipMate.Domain.ValueObjects;
 
 namespace ShipMate.Tests.Application;
@@ -26,6 +27,7 @@ public class BuildAnalysisServiceTests
     private readonly IAiGateway _ai = Substitute.For<IAiGateway>();
     private readonly IConfiguration _configuration = Substitute.For<IConfiguration>();
     private readonly IWorkspaceNotifier _notifier = Substitute.For<IWorkspaceNotifier>();
+    private readonly IPlatformSettingsRepository _platformSettings = Substitute.For<IPlatformSettingsRepository>();
     private readonly Workspace _workspace = new()
     {
         GitHubRepoOwner = "clinic", GitHubRepoName = "booking", GitHubInstallationId = 4242, DriftConfidenceThreshold = 0.75m
@@ -47,7 +49,11 @@ public class BuildAnalysisServiceTests
     {
         _service = new BuildAnalysisService(
             _submissions, _alerts, _workspaces, _definitions, _github, _ai, _configuration,
-            _notifier, Substitute.For<ILogger<BuildAnalysisService>>());
+            _notifier, _platformSettings, Substitute.For<ILogger<BuildAnalysisService>>());
+        _platformSettings.GetAsync().Returns(new PlatformSettings
+        {
+            MaintenanceCommitPatterns = MaintenanceChangePolicy.DefaultPatterns.ToList()
+        });
 
         _snapshot = new MvpSnapshot { WorkspaceId = _workspace.Id, Version = 3 };
         _snapshot.Features.Add(_mine);
@@ -582,6 +588,43 @@ public class BuildAnalysisServiceTests
 
         Assert.Equal(BuildSubmissionStatus.Drift, _submission.Status);
         await _ai.Received(1).GenerateJsonAsync(Arg.Any<AiJsonRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ThePatternsOfThePlatformSettings_DecideWhatCountsAsMaintenance()
+    {
+        GivenAnEarlierVerdict(BuildSubmissionStatus.Drift);
+        GivenNewCommits("chore: tidy", new ChangedFile("src/a.ts", "modified", "@@ -1 +1 @@\n-// a\n+// b"));
+        _platformSettings.GetAsync().Returns(new PlatformSettings { MaintenanceCommitPatterns = ["chore"] });
+
+        await Analyze();
+
+        Assert.Equal(BuildSubmissionStatus.SkippedMaintenance, _submission.Status);
+        await _ai.DidNotReceiveWithAnyArgs().GenerateJsonAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task AWordThatLeftThePatterns_NoLongerSkipsTheAi()
+    {
+        GivenAnEarlierVerdict(BuildSubmissionStatus.Drift);
+        GivenNewCommits("refactor: tidy", new ChangedFile("src/a.ts", "modified", "@@ -1 +1 @@\n-// a\n+// b"));
+        _platformSettings.GetAsync().Returns(new PlatformSettings { MaintenanceCommitPatterns = ["chore"] });
+        GivenAiAnswers(0.3m);
+
+        await Analyze();
+
+        Assert.Equal(BuildSubmissionStatus.Drift, _submission.Status);
+        await _ai.Received(1).GenerateJsonAsync(Arg.Any<AiJsonRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ThePatternsAreOnlyReadWhenAnEarlierVerdictCouldStandIn()
+    {
+        GivenAiAnswers(0.9m);
+
+        await Analyze();
+
+        await _platformSettings.DidNotReceive().GetAsync();
     }
 
     [Fact]

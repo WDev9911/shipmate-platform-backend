@@ -35,7 +35,7 @@ public class FeatureChallengePolicyTests
         new() { Name = "new feature", Description = "d", Complexity = complexity };
 
     private static ChallengeRecommendation Recommend(MvpSnapshot snapshot, int complexity, params int?[] skills) =>
-        ChallengeRecommendationPolicy.Recommend(MvpSnapshotEvolution.ActiveFeatures(snapshot), complexity, skills);
+        ChallengeRecommendationPolicy.Recommend(MvpSnapshotEvolution.ActiveFeatures(snapshot), complexity, skills, 10);
 
     // ---- recommendation ----
 
@@ -291,5 +291,29 @@ public class FeatureChallengePolicyTests
 
             Assert.Equal(EvolutionError.ReplacementInvalid, error);
         }
+    }
+
+    // ---- the budget belongs to the workspace ----
+
+    [Fact]
+    public void ABiggerBudgetPerDeveloper_LetsTheFeatureIn_WhereTheDefaultOneWouldMakeRoom()
+    {
+        var snapshot = Snapshot(F("a", 5), F("b", 4));
+
+        Assert.Equal(ChallengeAction.RemoveAndReplace,
+            ChallengeRecommendationPolicy.Recommend(MvpSnapshotEvolution.ActiveFeatures(snapshot), 3, [5], 10).Action);
+        Assert.Equal(ChallengeAction.AddDirectly,
+            ChallengeRecommendationPolicy.Recommend(MvpSnapshotEvolution.ActiveFeatures(snapshot), 3, [5], 15).Action);
+    }
+
+    [Fact]
+    public void TheBudgetGrowsWithTheDevelopers_AtTheWorkspaceRate()
+    {
+        var snapshot = Snapshot(F("a", 5), F("b", 5), F("c", 5));
+
+        Assert.Equal(ChallengeAction.AddDirectly,
+            ChallengeRecommendationPolicy.Recommend(MvpSnapshotEvolution.ActiveFeatures(snapshot), 5, [5, 5, 5], 10).Action);
+        Assert.Equal(ChallengeAction.AddDirectly,
+            ChallengeRecommendationPolicy.Recommend(MvpSnapshotEvolution.ActiveFeatures(snapshot), 5, [5], 20).Action);
     }
 }

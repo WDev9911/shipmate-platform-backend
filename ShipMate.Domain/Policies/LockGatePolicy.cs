@@ -49,19 +49,20 @@ public record LockGateResult(
 
 /// <summary>
 /// LOCK step 2: three independent checks that must all pass — Skill Ceiling (each feature no harder than the
-/// best active developer), Total Complexity Budget (sum of scores within 10 per active developer) and
+/// best active developer), Total Complexity Budget (sum of scores within the workspace budget per active developer) and
 /// Dependency Integrity (every depends_on points at a feature that is in the snapshot).
 /// </summary>
 public static class LockGatePolicy
 {
-    public const int BudgetPerDeveloper = 10;
-
-    public static LockGateResult Evaluate(IReadOnlyList<Feature> includedFeatures, IReadOnlyList<int?> memberSkills) =>
-        Evaluate(includedFeatures.Select(GateFeature.From).ToList(), memberSkills);
+    public static LockGateResult Evaluate(
+        IReadOnlyList<Feature> includedFeatures, IReadOnlyList<int?> memberSkills, int budgetPerDeveloper) =>
+        Evaluate(includedFeatures.Select(GateFeature.From).ToList(), memberSkills, budgetPerDeveloper);
 
     /// <param name="features">The features about to be sealed.</param>
     /// <param name="memberSkills">The skill level of every active member; null where not declared yet.</param>
-    public static LockGateResult Evaluate(IReadOnlyList<GateFeature> features, IReadOnlyList<int?> memberSkills)
+    /// <param name="budgetPerDeveloper">The points each active developer adds to the budget; a workspace keeps its own.</param>
+    public static LockGateResult Evaluate(
+        IReadOnlyList<GateFeature> features, IReadOnlyList<int?> memberSkills, int budgetPerDeveloper)
     {
         var scored = features.Where(f => f.Complexity is not null).ToList();
         var declaredSkills = memberSkills.Where(s => s is not null).Select(s => s!.Value).ToList();
@@ -85,7 +86,7 @@ public static class LockGatePolicy
             MembersWithoutSkill: memberSkills.Count(s => s is null),
             SkillCeilingViolations: ceilingViolations,
             TotalComplexity: scored.Sum(f => f.Complexity!.Value),
-            Budget: BudgetPerDeveloper * memberSkills.Count,
+            Budget: budgetPerDeveloper * memberSkills.Count,
             BrokenDependencies: brokenDependencies);
     }
 }

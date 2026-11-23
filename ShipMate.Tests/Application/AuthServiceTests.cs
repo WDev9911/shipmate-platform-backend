@@ -528,4 +528,124 @@ public class AuthServiceTests
         Assert.Null(user.GitHubUsername);
         _gitHubConnections.Received(1).Remove(connection);
     }
+
+    // ---------- A locked or removed account (nothing is issued, linked or sent) ----------
+
+    public static TheoryData<UserStatus> ClosedStatuses => new() { UserStatus.Locked, UserStatus.Removed };
+
+    [Theory]
+    [MemberData(nameof(ClosedStatuses))]
+    public async Task Login_ClosedAccount_WrongPasswordStillLooksLikeAnyWrongPassword(UserStatus status)
+    {
+        ExistingUser(status: status);
+
+        await Assert.ThrowsAsync<InvalidCredentialsException>(() =>
+            _service.LoginAsync(new LoginRequest { Email = Email, Password = "Sai@12345" }, null));
+    }
+
+    [Fact]
+    public async Task Login_UnverifiedAndLocked_WrongPasswordDoesNotTellEither()
+    {
+        ExistingUser(verified: false, status: UserStatus.Locked);
+
+        await Assert.ThrowsAsync<InvalidCredentialsException>(() =>
+            _service.LoginAsync(new LoginRequest { Email = Email, Password = "Sai@12345" }, null));
+    }
+
+    [Theory]
+    [MemberData(nameof(ClosedStatuses))]
+    public async Task Refresh_ClosedAccount_IsRefusedAndTheTokenIsNotRotated(UserStatus status)
+    {
+        var user = ExistingUser(status: status);
+        var token = StoredRefreshToken(user, "refresh-1");
+
+        await Assert.ThrowsAsync<AccountLockedException>(() => _service.RefreshTokenAsync("refresh-1"));
+
+        Assert.Null(token.RevokedAt);
+        Assert.Empty(_issuedRefreshTokens);
+    }
+
+    [Fact]
+    public async Task VerifyEmail_RightCodeButLockedAccount_IssuesNothing()
+    {
+        var user = ExistingUser(verified: false, status: UserStatus.Locked);
+        var token = new EmailVerificationToken { UserId = user.Id, ExpiresAt = DateTime.UtcNow.AddMinutes(10) };
+        _verificationTokens.GetValidTokenAsync(user.Id, SecureTokenGenerator.Hash("123456")).Returns(token);
+
+        await Assert.ThrowsAsync<AccountLockedException>(() =>
+            _service.VerifyEmailAsync(new VerifyEmailRequest { Email = Email, Code = "123456" }));
+
+        Assert.False(user.IsEmailVerified);
+        Assert.Null(token.UsedAt);
+        Assert.Empty(_issuedRefreshTokens);
+    }
+
+    [Fact]
+    public async Task VerifyEmail_WrongCodeOnALockedAccount_LooksLikeAnyWrongCode()
+    {
+        ExistingUser(verified: false, status: UserStatus.Locked);
+
+        await Assert.ThrowsAsync<InvalidOrExpiredTokenException>(() =>
+            _service.VerifyEmailAsync(new VerifyEmailRequest { Email = Email, Code = "000000" }));
+    }
+
+    [Theory]
+    [MemberData(nameof(ClosedStatuses))]
+    public async Task ForgotPassword_ClosedAccount_GetsNoCode(UserStatus status)
+    {
+        ExistingUser(status: status);
+
+        await _service.ForgotPasswordAsync(new ForgotPasswordRequest { Email = Email });
+
+        await _resetTokens.DidNotReceive().AddAsync(Arg.Any<PasswordResetToken>());
+        await _emails.DidNotReceive().TrySendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task GitHubLogin_LockedAccountWithThatEmail_IsNotLinkedMailedOrSignedIn()
+    {
+        var user = ExistingUser(status: UserStatus.Locked);
+        GitHubReturns(Email);
+
+        await Assert.ThrowsAsync<AccountLockedException>(() => _service.GitHubLoginAsync("code", null));
+
+        Assert.Null(user.GitHubId);
+        Assert.Null(user.GitHubUsername);
+        await _emails.DidNotReceive().TrySendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+        await _gitHubConnections.DidNotReceive().AddAsync(Arg.Any<GitHubConnection>());
+        await _users.DidNotReceive().SaveChangesAsync();
+        Assert.Empty(_issuedRefreshTokens);
+    }
+
+    [Fact]
+    public async Task GitHubLogin_ReturningLockedGitHubUser_KeepsTheProfileAndGetsNoToken()
+    {
+        var user = ExistingUser(status: UserStatus.Locked);
+        user.GitHubId = "gh-1";
+        user.GitHubUsername = "old-name";
+        user.AvatarUrl = "old.png";
+        _users.GetByGitHubIdAsync("gh-1").Returns(user);
+        GitHubReturns(Email);
+
+        await Assert.ThrowsAsync<AccountLockedException>(() => _service.GitHubLoginAsync("code", null));
+
+        Assert.Equal("old-name", user.GitHubUsername);
+        Assert.Equal("old.png", user.AvatarUrl);
+        await _gitHubConnections.DidNotReceive().AddAsync(Arg.Any<GitHubConnection>());
+        Assert.Empty(_issuedRefreshTokens);
+    }
+
+    [Fact]
+    public async Task GitHubLogin_ReturningActiveGitHubUser_SignsIn()
+    {
+        var user = ExistingUser();
+        user.GitHubId = "gh-1";
+        _users.GetByGitHubIdAsync("gh-1").Returns(user);
+        GitHubReturns(Email);
+
+        var response = await _service.GitHubLoginAsync("code", null);
+
+        Assert.Equal("access-token", response.AccessToken);
+        Assert.Equal("dev-gh", user.GitHubUsername);
+    }
 }

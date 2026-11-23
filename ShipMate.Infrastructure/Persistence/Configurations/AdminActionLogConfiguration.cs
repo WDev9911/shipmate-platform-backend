@@ -10,7 +10,8 @@ public class AdminActionLogConfiguration : IEntityTypeConfiguration<AdminActionL
     private static readonly Dictionary<AdminAction, string> ActionToDb = new()
     {
         [AdminAction.StatusChanged] = "status_changed",
-        [AdminAction.RoleChanged] = "role_changed"
+        [AdminAction.RoleChanged] = "role_changed",
+        [AdminAction.SettingsChanged] = "settings_changed"
     };
 
     public void Configure(EntityTypeBuilder<AdminActionLog> builder)
@@ -30,8 +31,9 @@ public class AdminActionLogConfiguration : IEntityTypeConfiguration<AdminActionL
             .HasMaxLength(30)
             .IsRequired();
 
-        builder.Property(l => l.OldValue).HasColumnName("old_value").HasMaxLength(50);
-        builder.Property(l => l.NewValue).HasColumnName("new_value").HasMaxLength(50);
+        builder.Property(l => l.Subject).HasColumnName("subject").HasMaxLength(50);
+        builder.Property(l => l.OldValue).HasColumnName("old_value").HasMaxLength(2000);
+        builder.Property(l => l.NewValue).HasColumnName("new_value").HasMaxLength(2000);
         builder.Property(l => l.CreatedAt).HasColumnName("created_at");
 
         // Preserve audit history even if a referenced account is ever removed — never cascade-delete logs.

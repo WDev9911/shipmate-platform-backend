@@ -18,6 +18,7 @@ public class AppDbContext : DbContext
     public DbSet<EmailVerificationToken> EmailVerificationTokens => Set<EmailVerificationToken>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<AdminActionLog> AdminActionLogs => Set<AdminActionLog>();
+    public DbSet<PlatformSettings> PlatformSettings => Set<PlatformSettings>();
     public DbSet<Workspace> Workspaces => Set<Workspace>();
     public DbSet<WorkspaceMember> WorkspaceMembers => Set<WorkspaceMember>();
     public DbSet<ProductDefinition> ProductDefinitions => Set<ProductDefinition>();
@@ -59,6 +60,10 @@ public class AppDbContext : DbContext
             catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is VerificationChecklist))
             {
                 throw new VerificationChecklistConflictException();
+            }
+            catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is PlatformSettings))
+            {
+                throw new SettingsChangedByOtherException();
             }
         }
     }

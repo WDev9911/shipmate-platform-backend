@@ -12,11 +12,7 @@ public class RegisterRequestValidator : AbstractValidator<RegisterRequest>
             .EmailAddress()
             .MaximumLength(256);
 
-        RuleFor(x => x.Password)
-            .NotEmpty()
-            .MinimumLength(8)
-            .Matches("[A-Z]").WithMessage("Password must contain at least 1 uppercase letter.")
-            .Matches("[0-9]").WithMessage("Password must contain at least 1 digit.");
+        RuleFor(x => x.Password).MeetsPasswordRules();
 
         RuleFor(x => x.ConfirmPassword)
             .Equal(x => x.Password).WithMessage("ConfirmPassword must match Password.");

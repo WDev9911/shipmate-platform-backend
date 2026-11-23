@@ -35,6 +35,9 @@ public class Workspace : BaseEntity
 
     public decimal DriftConfidenceThreshold { get; set; } = 0.75m;
 
+    // Copied from the platform settings when the workspace is created; changing the settings later never touches it.
+    public int ComplexityBudgetPerDeveloper { get; set; } = 10;
+
     // Set when ShipMate loses control of the repo (its App was uninstalled): the branch protections no longer
     // hold, so submits are refused and SHIP is blocked until the App is installed again.
     public DateTime? GovernanceSuspendedAt { get; set; }

@@ -46,7 +46,9 @@ public class WorkspaceAccessGuard : IWorkspaceAccessGuard
         var workspace = await _workspaceRepository.GetByIdAsync(workspaceId);
         var membership = await _workspaceMemberRepository.GetByWorkspaceAndUserIdAsync(workspaceId, userId);
 
-        if (workspace is null || membership is null || membership.Status != WorkspaceMemberStatus.Active)
+        // An administrator account never gets into a workspace, whatever the data says (an old row, an edited account).
+        if (workspace is null || membership is null || membership.Status != WorkspaceMemberStatus.Active
+            || membership.User is { Role: UserRole.Administrator })
         {
             throw new NotFoundException("Workspace", workspaceId);
         }

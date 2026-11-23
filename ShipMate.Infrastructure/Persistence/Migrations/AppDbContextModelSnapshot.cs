@@ -45,16 +45,21 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         .HasColumnName("created_at");
 
                     b.Property<string>("NewValue")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
                         .HasColumnName("new_value");
 
                     b.Property<string>("OldValue")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
                         .HasColumnName("old_value");
 
-                    b.Property<Guid>("TargetUserId")
+                    b.Property<string>("Subject")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("subject");
+
+                    b.Property<Guid?>("TargetUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("target_user_id");
 
@@ -907,6 +912,56 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.ToTable("password_reset_tokens", (string)null);
                 });
 
+            modelBuilder.Entity("ShipMate.Domain.Entities.PlatformSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<int>("ComplexityBudgetPerDeveloper")
+                        .HasColumnType("integer")
+                        .HasColumnName("complexity_budget_per_developer");
+
+                    b.Property<decimal>("DefaultDriftThreshold")
+                        .HasColumnType("numeric(4,2)")
+                        .HasColumnName("default_drift_threshold");
+
+                    b.Property<List<string>>("MaintenanceCommitPatterns")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("maintenance_commit_patterns");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("platform_settings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_platform_settings_single_row", "id = 1");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            ComplexityBudgetPerDeveloper = 10,
+                            DefaultDriftThreshold = 0.75m,
+                            MaintenanceCommitPatterns = new List<string> { "fix typo", "refactor", "bump version", "format code" },
+                            Revision = 0
+                        });
+                });
+
             modelBuilder.Entity("ShipMate.Domain.Entities.ProductDefinition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1288,6 +1343,12 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<int>("ComplexityBudgetPerDeveloper")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(10)
+                        .HasColumnName("complexity_budget_per_developer");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -1449,8 +1510,7 @@ namespace ShipMate.Infrastructure.Persistence.Migrations
                     b.HasOne("ShipMate.Domain.Entities.User", "TargetUser")
                         .WithMany()
                         .HasForeignKey("TargetUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("AdminUser");
 

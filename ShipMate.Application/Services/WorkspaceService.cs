@@ -31,6 +31,7 @@ public class WorkspaceService : IWorkspaceService
     private readonly IWorkspaceNotifier _notifier;
     private readonly IAuditTrail _auditTrail;
     private readonly IFeatureAssignmentRepository _assignmentRepository;
+    private readonly IPlatformSettingsRepository _platformSettingsRepository;
     private readonly IMapper _mapper;
 
     public WorkspaceService(
@@ -47,8 +48,10 @@ public class WorkspaceService : IWorkspaceService
         IWorkspaceNotifier notifier,
         IAuditTrail auditTrail,
         IFeatureAssignmentRepository assignmentRepository,
+        IPlatformSettingsRepository platformSettingsRepository,
         IMapper mapper)
     {
+        _platformSettingsRepository = platformSettingsRepository;
         _notifier = notifier;
         _auditTrail = auditTrail;
         _assignmentRepository = assignmentRepository;
@@ -67,13 +70,25 @@ public class WorkspaceService : IWorkspaceService
 
     public async Task<WorkspaceDto> CreateAsync(Guid ownerId, CreateWorkspaceRequest request)
     {
+        // An administrator account only runs the platform; the workspaces are the projects of the developers.
+        var owner = await _userRepository.GetByIdAsync(ownerId);
+        if (owner is { Role: UserRole.Administrator })
+        {
+            throw new AdminCannotUseWorkspacesException();
+        }
+
+        // The workspace keeps its own copy: an administrator changing the settings later never reaches a workspace that exists.
+        var settings = await _platformSettingsRepository.GetAsync();
+
         var workspace = new Workspace
         {
             OwnerId = ownerId,
             Name = request.Name,
             VisionPrompt = request.VisionPrompt,
             LaunchDeadline = request.LaunchDeadline,
-            Status = WorkspaceStatus.Active
+            Status = WorkspaceStatus.Active,
+            ComplexityBudgetPerDeveloper = settings.ComplexityBudgetPerDeveloper,
+            DriftConfidenceThreshold = settings.DefaultDriftThreshold
         };
         await _workspaceRepository.AddAsync(workspace);
 
@@ -167,6 +182,13 @@ public class WorkspaceService : IWorkspaceService
 
         var targetUser = await _userRepository.GetByEmailAsync(request.Email)
             ?? throw new NotFoundException($"No user found with email '{request.Email}'.");
+
+        // A locked or removed account can't sign in to take the invitation, and an administrator never joins a workspace.
+        // Both answer like an unknown email, so the Manager learns nothing about the account.
+        if (targetUser.Status != UserStatus.Active || targetUser.Role == UserRole.Administrator)
+        {
+            throw new NotFoundException($"No user found with email '{request.Email}'.");
+        }
 
         var existing = await _workspaceMemberRepository.GetByWorkspaceAndUserIdAsync(workspaceId, targetUser.Id);
         if (existing is not null && existing.Status != WorkspaceMemberStatus.Removed)

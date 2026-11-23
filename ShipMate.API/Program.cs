@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -8,7 +9,10 @@ using ShipMate.API.Filters;
 using ShipMate.API.Hubs;
 using ShipMate.API.Middlewares;
 using ShipMate.Application;
+using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Application.Interfaces.Services;
+using ShipMate.Application.Services;
+using ShipMate.Domain.Enums;
 using ShipMate.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -109,6 +113,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 }
 
                 return Task.CompletedTask;
+            },
+
+            // The token says who the caller was when it was issued; the account may have been locked since.
+            // One lookup by primary key per request, so a lock takes effect at once, not when the token expires.
+            OnTokenValidated = async context =>
+            {
+                var sub = context.Principal?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+                var users = context.HttpContext.RequestServices.GetRequiredService<IUserRepository>();
+                var user = Guid.TryParse(sub, out var userId) ? await users.GetByIdAsync(userId) : null;
+                if (user is null || user.Status != UserStatus.Active)
+                {
+                    context.Fail("The account is not active.");
+                }
             }
         };
     });
@@ -127,12 +144,19 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<HubConnectionRegistry>();
 builder.Services.AddSingleton<IWorkspaceNotifier, SignalRWorkspaceNotifier>();
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
+
+// The administrator named in AdminSeed:* (if any) exists before the first request. Needs the database migrated.
+using (var scope = app.Services.CreateScope())
+{
+    await scope.ServiceProvider.GetRequiredService<AdministratorSeeder>().SeedAsync();
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

@@ -39,6 +39,7 @@ public class LockServiceTests
         _repository.GetByWorkspaceIdAsync(_workspaceId).Returns(_definition);
         _repository.HasSuccessfulAnalysisRunAsync(_definition.Id).Returns(true);
         _guard.GetWorkspaceAsManagerAsync(_userId, _workspaceId).Returns(_workspace);
+        _guard.GetWorkspaceAsMemberAsync(_userId, _workspaceId).Returns(_workspace);
         GivenMembers(Member(skill: 4));
     }
 
@@ -297,5 +298,57 @@ public class LockServiceTests
         _repository.GetLatestSnapshotAsync(_workspaceId).Returns((MvpSnapshot?)null);
 
         await Assert.ThrowsAsync<NotFoundException>(() => _service.GetLatestSnapshotAsync(_userId, _workspaceId));
+    }
+
+    // ---- the budget is the workspace's own ----
+
+    private void GivenThreeFeaturesWorth(int a, int b, int c)
+    {
+        _a.Complexity = a;
+        _b.Complexity = b;
+        _definition.Features.Add(Scored("c", c));
+    }
+
+    [Fact]
+    public async Task Check_ReportsTheBudgetOfTheWorkspace()
+    {
+        _workspace.ComplexityBudgetPerDeveloper = 15;
+
+        var gate = await _service.CheckAsync(_userId, _workspaceId);
+
+        Assert.Equal(15, gate.Budget);
+    }
+
+    [Fact]
+    public async Task Lock_ElevenPointsForOneDeveloper_PassesWhenTheWorkspaceBudgetIsFifteen()
+    {
+        GivenThreeFeaturesWorth(4, 4, 3);
+        _workspace.ComplexityBudgetPerDeveloper = 15;
+
+        await _service.LockAsync(_userId, _workspaceId);
+
+        Assert.NotNull(_workspace.FirstLockedAt);
+    }
+
+    [Fact]
+    public async Task Lock_TheSameElevenPoints_AreBlockedWhenTheWorkspaceBudgetIsTen()
+    {
+        GivenThreeFeaturesWorth(4, 4, 3);
+        _workspace.ComplexityBudgetPerDeveloper = 10;
+
+        await AssertGateFailsAndNothingChanges(ex => Assert.Equal(10, ex.Gate.Budget));
+    }
+
+    [Fact]
+    public async Task Lock_TwoWorkspacesWithDifferentBudgets_AreJudgedByTheirOwn()
+    {
+        GivenThreeFeaturesWorth(4, 4, 3);
+        var smaller = new Workspace { ComplexityBudgetPerDeveloper = 10 };
+        _guard.GetWorkspaceAsManagerAsync(_userId, _workspaceId).Returns(smaller);
+
+        await Assert.ThrowsAsync<LockGateFailedException>(() => _service.LockAsync(_userId, _workspaceId));
+
+        _guard.GetWorkspaceAsManagerAsync(_userId, _workspaceId).Returns(new Workspace { ComplexityBudgetPerDeveloper = 15 });
+        await _service.LockAsync(_userId, _workspaceId);
     }
 }

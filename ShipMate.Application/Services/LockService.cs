@@ -39,10 +39,10 @@ public class LockService : ILockService
 
     public async Task<LockGateDto> CheckAsync(Guid userId, Guid workspaceId)
     {
-        await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
 
         var productDefinition = await GetDefinitionOrThrow(workspaceId);
-        var (_, gate, _) = await EvaluateAsync(productDefinition);
+        var (_, gate, _) = await EvaluateAsync(productDefinition, workspace.ComplexityBudgetPerDeveloper);
         return LockGateDto.From(gate);
     }
 
@@ -61,7 +61,7 @@ public class LockService : ILockService
             throw new ProductDefinitionNotReadyForLockException();
         }
 
-        var (included, gate, devCount) = await EvaluateAsync(productDefinition);
+        var (included, gate, devCount) = await EvaluateAsync(productDefinition, workspace.ComplexityBudgetPerDeveloper);
         if (!gate.IsPassed)
         {
             throw new LockGateFailedException(LockGateDto.From(gate));
@@ -146,7 +146,8 @@ public class LockService : ILockService
         return productDefinition;
     }
 
-    private async Task<(List<Feature> Included, LockGateResult Gate, int DevCount)> EvaluateAsync(ProductDefinition productDefinition)
+    private async Task<(List<Feature> Included, LockGateResult Gate, int DevCount)> EvaluateAsync(
+        ProductDefinition productDefinition, int budgetPerDeveloper)
     {
         var included = productDefinition.Features
             .Where(f => f.Status == FeatureStatus.Included)
@@ -159,6 +160,6 @@ public class LockService : ILockService
             .Select(m => m.SkillLevel)
             .ToList();
 
-        return (included, LockGatePolicy.Evaluate(included, skills), skills.Count);
+        return (included, LockGatePolicy.Evaluate(included, skills, budgetPerDeveloper), skills.Count);
     }
 }

@@ -55,7 +55,7 @@ public class FeatureChallengeService : IFeatureChallengeService
     public async Task<FeatureChallengeDto> SubmitAsync(
         Guid userId, Guid workspaceId, SubmitChallengeRequest request, CancellationToken cancellationToken = default)
     {
-        await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
 
         var snapshot = await GetSnapshotOrThrow(workspaceId);
         var productDefinition = await _productDefinitionRepository.GetByWorkspaceIdAsync(workspaceId);
@@ -88,13 +88,13 @@ public class FeatureChallengeService : IFeatureChallengeService
         await _challengeRepository.AddAsync(challenge);
         await _challengeRepository.SaveChangesAsync();
 
-        return await ToDtoAsync(challenge, snapshot);
+        return await ToDtoAsync(challenge, snapshot, workspace.ComplexityBudgetPerDeveloper);
     }
 
     public async Task<FeatureChallengeDto> ConfirmComplexityAsync(
         Guid userId, Guid workspaceId, Guid challengeId, ConfirmChallengeComplexityRequest request)
     {
-        await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
 
         var challenge = await GetChallengeOrThrow(workspaceId, challengeId);
         if (challenge.Status != ChallengeStatus.Open)
@@ -111,12 +111,12 @@ public class FeatureChallengeService : IFeatureChallengeService
         challenge.Complexity = request.Complexity;
         await _challengeRepository.SaveChangesAsync();
 
-        return await ToDtoAsync(challenge, await GetSnapshotOrThrow(workspaceId));
+        return await ToDtoAsync(challenge, await GetSnapshotOrThrow(workspaceId), workspace.ComplexityBudgetPerDeveloper);
     }
 
     public async Task<List<FeatureChallengeDto>> GetAllAsync(Guid userId, Guid workspaceId)
     {
-        await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
 
         var snapshot = await GetSnapshotOrThrow(workspaceId);
         var challenges = await _challengeRepository.GetByWorkspaceIdAsync(workspaceId);
@@ -124,7 +124,7 @@ public class FeatureChallengeService : IFeatureChallengeService
         var result = new List<FeatureChallengeDto>();
         foreach (var challenge in challenges)
         {
-            result.Add(await ToDtoAsync(challenge, snapshot));
+            result.Add(await ToDtoAsync(challenge, snapshot, workspace.ComplexityBudgetPerDeveloper));
         }
 
         return result;
@@ -132,10 +132,10 @@ public class FeatureChallengeService : IFeatureChallengeService
 
     public async Task<FeatureChallengeDto> GetAsync(Guid userId, Guid workspaceId, Guid challengeId)
     {
-        await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsMemberAsync(userId, workspaceId);
 
         var challenge = await GetChallengeOrThrow(workspaceId, challengeId);
-        return await ToDtoAsync(challenge, await GetSnapshotOrThrow(workspaceId));
+        return await ToDtoAsync(challenge, await GetSnapshotOrThrow(workspaceId), workspace.ComplexityBudgetPerDeveloper);
     }
 
     public async Task<FeatureChallengeDto> ApproveAsync(
@@ -180,7 +180,7 @@ public class FeatureChallengeService : IFeatureChallengeService
                 break;
         }
 
-        var gate = LockGatePolicy.Evaluate(MvpSnapshotEvolution.ActiveFeatures(next), skills);
+        var gate = LockGatePolicy.Evaluate(MvpSnapshotEvolution.ActiveFeatures(next), skills, workspace.ComplexityBudgetPerDeveloper);
         if (!gate.IsPassed)
         {
             throw new LockGateFailedException(LockGateDto.From(gate));
@@ -231,7 +231,7 @@ public class FeatureChallengeService : IFeatureChallengeService
             await NotifyRemovalAsync(workspaceId, snapshot, request.RemoveFeatureId!.Value, assignments);
         }
 
-        return await ToDtoAsync(challenge, next);
+        return await ToDtoAsync(challenge, next, workspace.ComplexityBudgetPerDeveloper);
     }
 
     // Returns whether the removed feature came from the committed list.
@@ -315,7 +315,7 @@ public class FeatureChallengeService : IFeatureChallengeService
     public async Task<FeatureChallengeDto> RejectAsync(
         Guid userId, Guid workspaceId, Guid challengeId, RejectChallengeRequest request)
     {
-        await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
+        var workspace = await _workspaceAccessGuard.GetWorkspaceAsManagerAsync(userId, workspaceId);
 
         var challenge = await GetChallengeOrThrow(workspaceId, challengeId);
         if (challenge.Status != ChallengeStatus.Open)
@@ -330,10 +330,11 @@ public class FeatureChallengeService : IFeatureChallengeService
         challenge.RejectionReason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
         await _challengeRepository.SaveChangesAsync();
 
-        return await ToDtoAsync(challenge, await GetSnapshotOrThrow(workspaceId));
+        return await ToDtoAsync(challenge, await GetSnapshotOrThrow(workspaceId), workspace.ComplexityBudgetPerDeveloper);
     }
 
-    private async Task<FeatureChallengeDto> ToDtoAsync(FeatureChallenge challenge, MvpSnapshot snapshot)
+    private async Task<FeatureChallengeDto> ToDtoAsync(
+        FeatureChallenge challenge, MvpSnapshot snapshot, int budgetPerDeveloper)
     {
         var dto = _mapper.Map<FeatureChallengeDto>(challenge);
 
@@ -342,7 +343,7 @@ public class FeatureChallengeService : IFeatureChallengeService
             var skills = await GetActiveMemberSkillsAsync(challenge.WorkspaceId);
             var assignments = await GetActiveAssignmentsAsync(challenge.WorkspaceId);
             var recommendation = ChallengeRecommendationPolicy.Recommend(
-                MvpSnapshotEvolution.ActiveFeatures(snapshot), challenge.Complexity.Value, skills);
+                MvpSnapshotEvolution.ActiveFeatures(snapshot), challenge.Complexity.Value, skills, budgetPerDeveloper);
 
             dto.Recommendation = new ChallengeRecommendationDto
             {

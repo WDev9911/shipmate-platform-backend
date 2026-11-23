@@ -8,7 +8,7 @@ public class MaintenanceChangePolicyTests
     private static ChangedFile Code(string patch) => new("src/app.ts", "modified", patch);
 
     private static bool Skips(string message, params ChangedFile[] files) =>
-        MaintenanceChangePolicy.IsMaintenanceOnly([message], files);
+        MaintenanceChangePolicy.IsMaintenanceOnly([message], files, MaintenanceChangePolicy.DefaultPatterns);
 
     [Fact]
     public void MaintenanceMessage_WithOnlyCommentChanges_IsMaintenance() =>
@@ -51,11 +51,11 @@ public class MaintenanceChangePolicyTests
     [Fact]
     public void EveryCommitMustLookLikeMaintenance() =>
         Assert.False(MaintenanceChangePolicy.IsMaintenanceOnly(
-            ["refactor: tidy", "add export feature"], [Code("@@ -1 +1 @@\n-// a\n+// b")]));
+            ["refactor: tidy", "add export feature"], [Code("@@ -1 +1 @@\n-// a\n+// b")], MaintenanceChangePolicy.DefaultPatterns));
 
     [Fact]
     public void NoCommits_NeverSkips() =>
-        Assert.False(MaintenanceChangePolicy.IsMaintenanceOnly([], [Code("@@ -1 +1 @@\n-// a\n+// b")]));
+        Assert.False(MaintenanceChangePolicy.IsMaintenanceOnly([], [Code("@@ -1 +1 @@\n-// a\n+// b")], MaintenanceChangePolicy.DefaultPatterns));
 
     [Theory]
     [InlineData("#include <stdio.h>")]
@@ -71,4 +71,36 @@ public class MaintenanceChangePolicyTests
     [InlineData("-- sql note")]
     public void RealCommentLines_AreIgnored(string line) =>
         Assert.True(Skips("refactor", Code($"@@ -0,0 +1 @@\n+{line}")));
+
+    // ---- the patterns come from the platform settings ----
+
+    private static readonly ChangedFile OnlyAComment = Code("@@ -1 +1 @@\n-// a\n+// b");
+
+    [Fact]
+    public void ACustomPattern_IsWhatCounts_NotTheDefaultWords()
+    {
+        Assert.True(MaintenanceChangePolicy.IsMaintenanceOnly(["chore: tidy"], [OnlyAComment], ["chore"]));
+        Assert.False(MaintenanceChangePolicy.IsMaintenanceOnly(["refactor: tidy"], [OnlyAComment], ["chore"]));
+    }
+
+    [Fact]
+    public void NoPatterns_NeverSkips() =>
+        Assert.False(MaintenanceChangePolicy.IsMaintenanceOnly(["refactor: tidy"], [OnlyAComment], []));
+
+    [Fact]
+    public void AMessageMatchesAnyOfThePatterns_InAnyCase() =>
+        Assert.True(MaintenanceChangePolicy.IsMaintenanceOnly(["DOCS: update"], [OnlyAComment], ["chore", "docs"]));
+
+    [Fact]
+    public void APatternMatchesInsideWords_SoAShortOneMatchesMore() =>
+        Assert.True(MaintenanceChangePolicy.IsMaintenanceMessage("prefix the names", ["fix"]));
+
+    [Fact]
+    public void TheDefaultPatterns_AreTheFourThatWereBuiltIn() =>
+        Assert.Equal(["fix typo", "refactor", "bump version", "format code"], MaintenanceChangePolicy.DefaultPatterns);
+
+    [Fact]
+    public void AMatchingMessageStillNeedsHarmlessFiles() =>
+        Assert.False(MaintenanceChangePolicy.IsMaintenanceOnly(
+            ["chore: tidy"], [Code("@@ -1 +1 @@\n-run();\n+runDifferently();")], ["chore"]));
 }

@@ -125,6 +125,12 @@ public class AuthService : IAuthService
             throw new InvalidOrExpiredTokenException();
         }
 
+        // Checked after the code, so only someone holding a valid code learns the account is locked.
+        if (user.Status != UserStatus.Active)
+        {
+            throw new AccountLockedException();
+        }
+
         user.IsEmailVerified = true;
         user.EmailVerifiedAt = DateTime.UtcNow;
         user.UpdatedAt = DateTime.UtcNow;
@@ -179,6 +185,12 @@ public class AuthService : IAuthService
             throw new InvalidCredentialsException();
         }
 
+        // The password goes first: the state of an account is only told to someone who knows its password.
+        if (!_passwordHasher.Verify(request.Password, user.PasswordHash))
+        {
+            throw new InvalidCredentialsException();
+        }
+
         if (user.Status != UserStatus.Active)
         {
             throw new AccountLockedException();
@@ -187,11 +199,6 @@ public class AuthService : IAuthService
         if (!user.IsEmailVerified)
         {
             throw new EmailNotVerifiedException();
-        }
-
-        if (!_passwordHasher.Verify(request.Password, user.PasswordHash))
-        {
-            throw new InvalidCredentialsException();
         }
 
         return await IssueTokensAsync(user, deviceInfo);
@@ -212,6 +219,12 @@ public class AuthService : IAuthService
         if (user is null)
         {
             var existingByEmail = await _userRepository.GetByEmailAsync(profile.Email);
+
+            // Before anything is linked, changed or mailed: a locked account must not gain a GitHub link.
+            if (existingByEmail is not null && existingByEmail.Status != UserStatus.Active)
+            {
+                throw new AccountLockedException();
+            }
 
             if (existingByEmail is null)
             {
@@ -260,7 +273,12 @@ public class AuthService : IAuthService
         }
         else
         {
-            // Case 4: returning GitHub user — keep the cached profile fields fresh.
+            // Case 4: returning GitHub user — keep the cached profile fields fresh (unless the account is locked).
+            if (user.Status != UserStatus.Active)
+            {
+                throw new AccountLockedException();
+            }
+
             user.GitHubUsername = profile.Username;
             user.AvatarUrl = profile.AvatarUrl;
             user.UpdatedAt = DateTime.UtcNow;
@@ -395,6 +413,11 @@ public class AuthService : IAuthService
         var user = await _userRepository.GetByIdAsync(existingToken.UserId)
             ?? throw new InvalidOrExpiredTokenException();
 
+        if (user.Status != UserStatus.Active)
+        {
+            throw new AccountLockedException();
+        }
+
         return await IssueTokensAsync(user, existingToken.DeviceInfo, tokenToRotate: existingToken);
     }
 
@@ -419,7 +442,8 @@ public class AuthService : IAuthService
         // Always behave the same way whether the email doesn't exist, or exists but is GitHub-only
         // (no password to reset) — this both avoids user enumeration and enforces that GitHub-only
         // accounts can't gain a password through this flow.
-        if (user is null || !user.HasPassword)
+        // A locked or removed account gets no reset code either: same silence as for an unknown email.
+        if (user is null || !user.HasPassword || user.Status != UserStatus.Active)
         {
             return;
         }
