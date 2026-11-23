@@ -1,5 +1,6 @@
 using ShipMate.Domain.Common;
 using ShipMate.Domain.Enums;
+using ShipMate.Domain.Policies;
 
 namespace ShipMate.Domain.Entities;
 
@@ -48,6 +49,10 @@ public class Workspace : BaseEntity
     // Set exactly once, by LOCK, on this workspace's first-ever Lock. SHIP uses it to compute
     // Time-to-Ship — must never be overwritten by later Locks/Feature Challenges.
     public DateTime? FirstLockedAt { get; set; }
+
+    // What the production site serves at ShipOwnership.FilePath to prove SHIP is pointed at the team's own site.
+    // Fixed for the workspace's life, so a file already deployed keeps working for every later release.
+    public string ShipOwnershipToken { get; set; } = ShipOwnership.NewToken();
 
     public DateTime? UpdatedAt { get; set; }
 }

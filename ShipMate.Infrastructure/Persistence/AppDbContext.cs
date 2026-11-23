@@ -35,6 +35,8 @@ public class AppDbContext : DbContext
     public DbSet<DriftAlert> DriftAlerts => Set<DriftAlert>();
     public DbSet<VerificationChecklist> VerificationChecklists => Set<VerificationChecklist>();
     public DbSet<VerificationChecklistItem> VerificationChecklistItems => Set<VerificationChecklistItem>();
+    public DbSet<ShipAttempt> ShipAttempts => Set<ShipAttempt>();
+    public DbSet<ShipCard> ShipCards => Set<ShipCard>();
     public DbSet<AuditTrailEntry> AuditTrail => Set<AuditTrailEntry>();
 
     // How many times a save is retried when it lost the race to extend a workspace's audit chain.

@@ -46,6 +46,7 @@ public class VerificationServiceTests
         _checklist.MvpSnapshot = _snapshot;
 
         _checklists.GetByVersionAsync(_workspaceId, 2).Returns(_checklist);
+        _checklists.GetCurrentByVersionAsync(_workspaceId, 2).Returns(_checklist);
         _alerts.GetOpenByWorkspaceAsync(_workspaceId).Returns(_openAlerts);
         _guard.GetWorkspaceAsManagerAsync(_developer, _workspaceId).ThrowsAsync(new WorkspacePermissionDeniedException());
     }

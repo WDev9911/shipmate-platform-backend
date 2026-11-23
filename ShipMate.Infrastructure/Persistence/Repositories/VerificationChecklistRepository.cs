@@ -22,6 +22,12 @@ public class VerificationChecklistRepository : IVerificationChecklistRepository
             .Include(c => c.MvpSnapshot).ThenInclude(s => s.Features)
             .FirstOrDefaultAsync(c => c.WorkspaceId == workspaceId && c.SnapshotVersion == snapshotVersion);
 
+    public async Task<VerificationChecklist?> GetCurrentByVersionAsync(Guid workspaceId, int snapshotVersion) =>
+        await _context.VerificationChecklists
+            .AsNoTracking()
+            .Include(c => c.Items)
+            .FirstOrDefaultAsync(c => c.WorkspaceId == workspaceId && c.SnapshotVersion == snapshotVersion);
+
     public async Task<List<VerificationChecklist>> GetByWorkspaceIdAsync(Guid workspaceId) =>
         await _context.VerificationChecklists
             .Include(c => c.Items)

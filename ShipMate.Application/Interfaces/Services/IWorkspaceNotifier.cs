@@ -31,4 +31,7 @@ public static class WorkspaceEvents
     // LOCK (added): the two notifications LOCK owed
     public const string FeatureRemoved = "FeatureRemoved";
     public const string BackupFeatureMatched = "BackupFeatureMatched";
+
+    // SHIP (added): a version shipped and has its card
+    public const string ShipCardMinted = "ShipCardMinted";
 }

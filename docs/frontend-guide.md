@@ -261,6 +261,111 @@ Phản hồi chi tiết (cũng là phản hồi của hai route PUT):
 - Không có `findings` hay gợi ý của AI ở đây. Xem chi tiết bằng `GET .../build/submissions/{latestSubmissionId}`.
 - **Tải lại** `GET .../assignments` khi nhận các sự kiện SignalR `AnalysisCompleted`, `DriftAlertTriggered`, `ManagerOverrideExecuted`, `CodeScopeApproved`. Lúc dev vừa submit thì **chưa có** sự kiện nào; người khác sẽ thấy `Analyzing` chuyển thẳng sang kết quả khi phân tích xong (thường 5–15 giây).
 
+### 2.12. SHIP: kiểm tra URL production và Ship Card
+
+SHIP xác nhận version **mới nhất** đang chạy trên production, rồi cấp một Ship Card có Time-to-Ship và Scope Discipline Score. Route gốc `api/workspaces/{workspaceId}/ship`, cần đăng nhập và là thành viên đang hoạt động. Chi tiết nghiệp vụ ở `docs/flows/05-ship.md`.
+
+| Method | Route | Ai | Việc |
+|---|---|---|---|
+| GET | `readiness` | Thành viên | Version mới nhất ship được chưa, và **mọi** thứ đang chặn (dùng để vẽ màn hình SHIP trước khi bấm) |
+| GET | `ownership-token` | **Manager** | `{ "token": "shipmate-…", "path": "/.well-known/shipmate.txt" }` |
+| POST | `attempts` | **Manager** | Body `{ "snapshotVersion": 2, "url": "https://…" }`. Kiểm URL; qua hết thì cấp thẻ |
+| POST | `attempts/{attemptId}/recheck` | **Manager** | Kiểm lại đúng version và URL của lần trước, thành một lần thử **mới** |
+| GET | `attempts` | Thành viên | 50 lần thử gần nhất, mới nhất trước |
+| GET | `cards` | Thành viên | Các Ship Card, version mới nhất trước |
+| GET | `cards/{cardId}` | Thành viên | Một thẻ |
+| GET | `cards/{cardId}/verify` | Thành viên | Thẻ còn khớp lịch sử audit không |
+| PUT | `cards/{cardId}/visibility` | **Manager** | Body `{ "isPublic": true }` |
+| GET | `/api/ship-cards/{publicSlug}` | **Ai cũng được** (không cần đăng nhập) | Thẻ công khai |
+| GET | `/api/ship-cards/{publicSlug}/verify` | **Ai cũng được** | Xác minh thẻ công khai |
+
+**Bước chuẩn bị của đội (hiện trên màn hình SHIP).** Production phải phục vụ file văn bản `https://<đúng host đã nhập>/.well-known/shipmate.txt` chứa token lấy từ `ownership-token` (một dòng; file chứa nhiều token, mỗi dòng một cái, cũng được). Token cố định suốt đời workspace, nên chỉ cần thêm file một lần. Không có bước này thì ai cũng ship được URL của người khác.
+
+**Readiness** (`GET readiness`):
+
+```json
+{
+  "version": 2, "canShip": false,
+  "blockers": ["SHIP_FEATURES_NOT_APPROVED", "SHIP_VERIFY_INCOMPLETE"],
+  "lockedFeatures": 3, "approvedFeatures": 2,
+  "unapprovedFeatures": [{ "featureId": "…", "name": "Hồ sơ bệnh án" }],
+  "missingVerificationItems": ["basic_crud"],
+  "governanceSuspended": false, "auditChainBrokenAt": null, "shipCardId": null
+}
+```
+
+`blockers` là danh sách mã lỗi theo đúng thứ tự `POST attempts` kiểm; rỗng thì `canShip = true`. `version` là `null` trước lần Lock đầu. Đã ship thì có `shipCardId`.
+
+**Kết quả một lần thử** (`POST attempts` và `recheck`, luôn `200` khi đã chạy kiểm tra, kể cả khi trượt):
+
+```json
+{
+  "attempt": {
+    "id": "…", "snapshotVersion": 2, "url": "https://nhakhoa.example/",
+    "status": "ChecksFailed", "failureCode": "SHIP_OWNERSHIP_UNVERIFIED",
+    "ping": { "passed": true, "statusCode": 200, "error": null },
+    "ssl": { "valid": true, "error": null, "expiresAt": "2027-02-01T00:00:00Z" },
+    "ownership": { "verified": false, "error": "FILE_NOT_FOUND" },
+    "createdByUserId": "…", "checkedAt": "…"
+  },
+  "card": null
+}
+```
+
+`status` là `ChecksFailed` hoặc `Shipped`; khi `Shipped` thì `card` là thẻ vừa cấp. `url` đã được chuẩn hóa (chữ thường, bỏ phần `#…`). Một lần kiểm mất tối đa khoảng 30 giây: hiện spinner, không gọi lại khi chưa có kết quả.
+
+| `failureCode` (bước trượt đầu tiên) | Lỗi chi tiết có thể gặp | Gợi ý hiển thị |
+|---|---|---|
+| `SHIP_URL_NOT_PUBLIC` | `ping.error = HOST_NOT_PUBLIC` | "Địa chỉ trỏ vào mạng nội bộ" (localhost, IP private, chuyển hướng vào trong...) |
+| `SHIP_PING_FAILED` | `ping.error`: `HOST_NOT_FOUND`, `CONNECTION_FAILED`, `TIMEOUT`, `TOO_MANY_REDIRECTS` (quá 3), `REDIRECT_NOT_ALLOWED` (chuyển sang `http`, cổng khác...), `UNEXPECTED_STATUS` (kèm `statusCode`, phải là 200) | Hiện mã HTTP nếu có |
+| `SHIP_SSL_INVALID` | `ssl.error`: `CERTIFICATE_EXPIRED`, `NAME_MISMATCH`, `UNTRUSTED`, `NOT_PROVIDED`, `INVALID` | `NOT_CHECKED` nghĩa là chưa tới được bước bắt tay TLS |
+| `SHIP_OWNERSHIP_UNVERIFIED` | `ownership.error`: `FILE_NOT_FOUND`, `TOKEN_MISMATCH`, `REDIRECTED_TO_OTHER_HOST`, `UNREACHABLE` | Nhắc đặt file token (mục trên) |
+
+**Lỗi của request** (không chạy kiểm tra nào, không tính vào giới hạn):
+
+| Mã lỗi | HTTP | Khi nào |
+|---|---|---|
+| `SHIP_URL_INVALID` | 400 | `details.reason`: `NOT_HTTPS`, `NOT_DEFAULT_PORT`, `HAS_CREDENTIALS`, `LOCAL_HOST`, `NOT_ABSOLUTE`, `TOO_LONG`, `EMPTY` |
+| `SHIP_WORKSPACE_ARCHIVED` | 409 | Workspace đã lưu trữ |
+| `SHIP_NOT_LOCKED` | 409 | Chưa Lock lần nào |
+| `NOT_FOUND` | 404 | `snapshotVersion` không tồn tại, hoặc không phải thành viên |
+| `SHIP_VERSION_NOT_LATEST` | 409 | Version cũ hơn version mới nhất (`details.latestVersion`). Thường do có Feature Challenge vừa được duyệt: tải lại |
+| `SHIP_ALREADY_SHIPPED` | 409 | Version này đã có thẻ (kể cả khi hai người bấm cùng lúc) |
+| `SHIP_GOVERNANCE_SUSPENDED` | 409 | App ShipMate bị gỡ khỏi repo: nhắc cài lại App, rồi submit code một lần |
+| `SHIP_FEATURES_NOT_APPROVED` | 409 | `details.features`: feature đã khóa mà code mới nhất chưa được duyệt ở BUILD |
+| `SHIP_VERIFY_INCOMPLETE` | 409 | `details.missingItems`: checklist VERIFY chưa xong |
+| `SHIP_AUDIT_CHAIN_BROKEN` | 409 | Lịch sử audit đã bị sửa (`details.brokenAtSequence`); không cấp thẻ được |
+| `SHIP_RATE_LIMITED` | 429 | Quá 10 lần thử trong một giờ; `details.retryAfter` là lúc thử lại được |
+| `WORKSPACE_PERMISSION_DENIED` | 403 | Không phải Manager |
+| `VALIDATION_FAILED` | 400 | Thiếu `url`, hoặc `snapshotVersion` ≤ 0 |
+
+**Ship Card** (`card`, `GET cards`, `GET cards/{id}`):
+
+```json
+{
+  "id": "…", "productName": "Nha Khoa", "version": 2, "url": "https://nhakhoa.example/",
+  "shippedAt": "…", "shippedByUserId": "…", "timeToShipSeconds": 259200,
+  "score": 71, "maxScore": 100, "scoreFormulaVersion": "v0",
+  "scoreBreakdown": [
+    { "key": "scope_volatility", "count": 1, "deduction": 3, "cap": 15, "outOf": null },
+    { "key": "remove_and_replace", "count": 1, "deduction": 10, "cap": 10, "outOf": 1 }
+  ],
+  "verificationChecklistId": "…", "verificationCompletedAt": "…",
+  "auditAnchorSequence": 3, "auditAnchorHash": "…",
+  "shipAttemptId": "…", "isPublic": false, "publicSlug": "hZ2EpGqf58_ue6jug9xA4A"
+}
+```
+
+- `scoreBreakdown` luôn có đủ 7 phần theo thứ tự: `scope_volatility`, `scope_bypass`, `governance_dilution`, `open_drift`, `remove_and_replace`, `deadline_overrun`, `direct_push`. Hiện "−deduction/cap" cho từng phần. `remove_and_replace` là tỉ lệ nên có `outOf` (tổng số challenge thêm hoặc thay); các phần khác `outOf = null`.
+- `timeToShipSeconds` tính từ lần **Lock đầu tiên** của workspace, không phải từ lúc version này ra đời.
+- Thẻ công khai (`GET /api/ship-cards/{publicSlug}`) có cùng các trường **trừ** `id`, `shippedByUserId`, `verificationChecklistId`, `shipAttemptId`, `isPublic`, `publicSlug`. Thẻ riêng tư trả 404 ở địa chỉ công khai. Đường link chia sẻ do FE tự dựng từ `publicSlug`.
+
+**Xác minh** (`verify`): `{ "valid": true, "reason": null, "anchorSequence": 3, "anchorHash": "…", "checkedAt": "…" }`. Khi `valid = false`, `reason` là `AUDIT_CHAIN_BROKEN`, `ANCHOR_MISMATCH`, `CARD_RECORD_MISSING` hoặc `CARD_RECORD_MISMATCH` (thẻ bị sửa trong DB). Không trả nội dung audit nào. Bản ghi audit thêm **sau** khi cấp thẻ không làm thẻ mất hiệu lực.
+
+**Next Best Action** có thêm `ShipVersion` (kèm `snapshotVersion`), **chỉ cho Manager**, khi mọi feature đã khóa đã được duyệt, checklist đã xong và version chưa có thẻ. Developer lúc đó nhận `NoAction`.
+
+**SignalR:** sự kiện `ShipCardMinted` gửi tới mọi thành viên: `{ "cardId", "version", "score", "timeToShipSeconds" }`. Tải lại `readiness` và `cards` khi nhận.
+
 ---
 
 ## 3. Luồng GitHub (OAuth) cho Frontend
@@ -478,3 +583,6 @@ Tài khoản mẫu cho DEFINE và LOCK nằm trong `define-demo-data.md` (file *
 - [ ] Không dùng `title` để phân loại lỗi (đã đổi theo mã HTTP); chỉ dùng `errorCode`.
 - [ ] Màn hình VERIFY (mục 2.10): danh sách version, tick từng mục, ghi chú, Manager đánh dấu "không áp dụng" kèm lý do; xử lý `VERIFY_CHECKLIST_CONFLICT` bằng cách tải lại.
 - [ ] Next Best Action xử lý hành động `CompleteVerification` và `blockedReason` không kèm `blockedByFeatureId`.
+- [ ] Màn hình SHIP (mục 2.12): vẽ từ `readiness`, hiện token và đường dẫn file cho Manager, kết quả từng bước kiểm, xử lý `SHIP_RATE_LIMITED` bằng `retryAfter`, và `SHIP_VERSION_NOT_LATEST` bằng cách tải lại.
+- [ ] Ship Card: hiện 7 phần điểm, bật/tắt công khai, trang công khai theo `publicSlug` gọi `verify`.
+- [ ] Next Best Action xử lý hành động `ShipVersion` (chỉ Manager nhận).
