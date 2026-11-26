@@ -8,19 +8,19 @@ Kế hoạch chi tiết cho module Administrator, viết trước khi code. Ngu�
 
 | Giai đoạn | Trạng thái | Mức kiểm |
 |---|---|---|
-| A (tài khoản) | Đã code trên nhánh `feature/admin`, chưa commit | Đã chạy HTTP thật trên DB dev (lần 1: 34 ca; lần 2 bù: tìm kiếm có `_`, `accountLocked`, luật Admin không đổi trạng thái Admin). **Vẫn chỉ có unit test:** GitHub login với tài khoản bị khóa (A.1), refresh và xác minh email với tài khoản bị khóa, nội dung email khi khóa (A.12), seed với mật khẩu yếu hoặc email của Developer (A.17) |
-| B (cấu hình nền tảng) | Đã code trên nhánh `feature/admin`, chưa commit. Migration `AddPlatformSettings` đã áp lên DB dev | Đã chạy HTTP thật (2026-11-23): quyền, kiểm đầu vào (12 ca), `revision` và `NO_CHANGE`, nhật ký từng trường, hai Admin lưu cùng lúc (4 lượt, lần nào cũng đúng 1 thắng, 1 nhận 409), endpoint thử mẫu, workspace mới chép đúng giá trị, 21 workspace cũ giữ 10. **Chỉ có unit test:** BUILD dùng mẫu từ cấu hình (cần GitHub thật), Lock và Feature Challenge dùng ngân sách của workspace (cần phân tích AI), chiều `Down` của migration |
-| C (nhật ký gọi AI), E (giám sát) | Chưa làm | — |
-| F (tài liệu) | Làm một phần: README (cách đặt `AdminSeed`) và [admin-test-report.md](../admin-test-report.md) đã xong. **Chưa làm:** `docs/frontend-guide.md` (hiện không có chữ nào về Admin), BM03 | — |
+| A (tài khoản) | Đã commit trên `feature/admin` (chưa push) | Đã chạy HTTP thật trên DB dev (lần 1: 34 ca; lần 2 bù: tìm kiếm có `_`, `accountLocked`, luật Admin không đổi trạng thái Admin). **Vẫn chỉ có unit test:** GitHub login với tài khoản bị khóa (A.1), refresh và xác minh email với tài khoản bị khóa, nội dung email khi khóa (A.12), seed với mật khẩu yếu hoặc email của Developer (A.17) |
+| B (cấu hình nền tảng) | Đã commit trên `feature/admin` (chưa push). Sau khi gộp SHIP, migration Admin tạo lại thành `AdminAccountsAndPlatformSettings`, đã áp lên DB dev | Đã chạy HTTP thật (2026-11-23): quyền, kiểm đầu vào (12 ca), `revision` và `NO_CHANGE`, nhật ký từng trường, hai Admin lưu cùng lúc (4 lượt, lần nào cũng đúng 1 thắng, 1 nhận 409), endpoint thử mẫu, workspace mới chép đúng giá trị, 21 workspace cũ giữ 10. **Chỉ có unit test:** BUILD dùng mẫu từ cấu hình (cần GitHub thật), Lock và Feature Challenge dùng ngân sách của workspace (cần phân tích AI), chiều `Down` của migration |
+| C (nhật ký gọi AI) | Đã code (2026-11-24), chưa commit. Migration `AddAiCallLogs` đã áp lên DB dev. Gồm cả C.1 (L9): hủy không còn bị ghi thành lỗi provider | Unit test cho mọi lối ra của gateway (test L9 đã chứng minh đỏ với code cũ, xanh với code mới). HTTP thật: `GET /ai/usage` với dữ liệu chèn bằng SQL (gom theo ngày UTC, cộng token, khoảng thời gian, kiểm đầu vào). **Chưa chạy với Gemini thật**: chưa thấy một dòng nhật ký do lời gọi AI thật ghi ra |
+| E (giám sát) | Đã code (2026-11-24), chưa commit | HTTP thật: `GET /monitoring/overview` khớp với truy vấn SQL trực tiếp (workspace 4 hoạt động, 17 lưu trữ; số bản ghi `audit_trail` theo loại) |
+| F (tài liệu) | README, [admin-test-report.md](../admin-test-report.md), `docs/frontend-guide.md` mục 2.13 (2026-11-24) đã xong | — |
 
-**Kết luận 2026-11-23: giai đoạn A và B đã xong phần code và phần kiểm, nhưng chưa đóng hẳn.** Còn các việc sau:
-1. Commit và mở PR cho `feature/admin` (hiện 53 file đổi, chưa commit).
-2. Cập nhật `docs/frontend-guide.md`: API mới (`action-logs`, `settings`, thử mẫu), API bỏ (`PATCH /users/{id}/role`), mã lỗi mới (`NO_CHANGE`, `ACCOUNT_REMOVED_FINAL`, `ADMIN_CANNOT_USE_WORKSPACES`, `ADMIN_ACCOUNT_PROTECTED`, `SETTINGS_CHANGED_BY_OTHER`), `accountLocked`, 401 khi tài khoản bị khóa giữa phiên, Admin không có màn hình workspace.
-3. **Phần chạm vào LOCK và BUILD do bạn làm, nên bạn duyệt trước khi merge** (6 file, +51 −35): `LockGatePolicy`, `ChallengeRecommendationPolicy` (ngân sách thành tham số), `LockService`, `FeatureChallengeService` (giữ workspace để lấy ngân sách), `MaintenanceChangePolicy`, `BuildAnalysisService` (đọc mẫu commit từ cấu hình). Cũng chạm `WorkspaceAccessGuard` và `WorkspaceService` (chặn Admin, chép cấu hình khi tạo workspace).
-4. **Các câu hỏi chưa được bạn chốt nhưng code đã làm theo đề xuất:** C1 (sàn và khoảng ngưỡng chỉ hiện), C3 (chỉ `accountLocked`), C5 (kiểm trạng thái mỗi request), C7 (`Removed` là cuối), C10 (email khi khóa). C8 (không tự gỡ khỏi repo GitHub) và C11 (email `Removed` bị giữ mãi) cũng đang theo đề xuất. Nếu quyết định khác thì phải sửa code.
-5. Các phần chỉ có unit test (liệt kê ở hai dòng trên) vẫn chưa chạy thật; cần GitHub thật, AI thật hoặc thử trên giao diện.
+**Kết luận 2026-11-24: mọi giai đoạn của phạm vi đã rút gọn (A, B, C, E, F) đã code và kiểm.** Còn các việc sau để đóng hẳn:
+1. Commit phần C, E, F; push `feature/admin` và mở PR.
+2. **Phần chạm vào LOCK và BUILD do bạn làm, nên bạn duyệt trước khi merge** (6 file ở giai đoạn B, cộng 3 file ở giai đoạn C: `BuildAnalysisClient`, `ComplexityScoringClient`, `PersonaConflictClient` thêm `Purpose`): `LockGatePolicy`, `ChallengeRecommendationPolicy` (ngân sách thành tham số), `LockService`, `FeatureChallengeService` (giữ workspace để lấy ngân sách), `MaintenanceChangePolicy`, `BuildAnalysisService` (đọc mẫu commit từ cấu hình). Cũng chạm `WorkspaceAccessGuard` và `WorkspaceService` (chặn Admin, chép cấu hình khi tạo workspace).
+3. **Các câu hỏi chưa được bạn chốt nhưng code đã làm theo đề xuất:** C1 (sàn và khoảng ngưỡng chỉ hiện), C3 (chỉ `accountLocked`), C5 (kiểm trạng thái mỗi request), C7 (`Removed` là cuối), C10 (email khi khóa). C8 (không tự gỡ khỏi repo GitHub) và C11 (email `Removed` bị giữ mãi) cũng đang theo đề xuất. Nếu quyết định khác thì phải sửa code.
+4. Các phần chỉ có unit test (liệt kê ở hai dòng trên) vẫn chưa chạy thật; cần GitHub thật, AI thật hoặc thử trên giao diện.
 
-Chưa kiểm ở đâu cả: chiều `Down` của hai migration, hiệu năng của truy vấn thêm mỗi request, giao diện frontend. Phần lớn code A được viết trước test, nên chưa chứng minh được từng test sẽ đỏ khi chưa sửa.
+Chưa kiểm ở đâu cả: hiệu năng của truy vấn thêm mỗi request, giao diện frontend. Chiều `Down` của 2 migration Admin cũ đã chạy thật khi gỡ ra để gộp SHIP (2026-11-23). Phần lớn code A được viết trước test, nên chưa chứng minh được từng test sẽ đỏ khi chưa sửa.
 
 **Phạm vi đã rút gọn (2026-11-21):** chỉ giữ những gì cần để trình bày FR-4.1, 4.3, 4.4, 4.6, 4.7 với ít code nhất. Các phần tốn công mà giá trị demo thấp chuyển xuống **mục 13 (Làm sau nếu còn thời gian)**, giữ nguyên thiết kế để cần thì làm tiếp. Số bước của giai đoạn A giữ nguyên số cũ để các tham chiếu từ kế hoạch tổng thể vẫn đúng; bước nào đã chuyển xuống mục 13 thì ghi rõ.
 
@@ -49,7 +49,7 @@ Mục lục
    - Tạo bằng seed lúc khởi động, không nâng từ Developer. Không có API đổi role.
    - Không tạo workspace, không được mời, không vào được workspace nào.
    - Ai cần làm dự án thì dùng một tài khoản Developer khác.
-3. **Không có quota và subscription plan** (2026-11-06). Ghi vào BM03.
+3. **Không có quota và subscription plan** (2026-11-06).
 4. **Cấu hình của Admin không có hiệu lực ngược.** Giá trị được chép vào workspace lúc tạo, giống cách `threshold_at_check` và `dev_count_at_lock` đang làm. Admin đổi số thì chỉ workspace mới nhận số mới. Nếu không làm vậy, ngân sách của một snapshot đã Lock có thể "vượt" sau một lần Admin đổi số, và Feature Challenge sẽ tính sai.
 5. **Mọi thao tác ghi của Admin vào nhật ký Admin** (`admin_action_logs`), tách khỏi `audit_trail` của workspace (spec 3.2: "Admin audit log riêng").
 6. **YAGNI:** không thêm cache, feature flag, job dọn dẹp, cơ chế khóa hay thống kê khi chưa cần.
@@ -124,7 +124,7 @@ Bảng `admin_action_logs` ([AdminActionLogConfiguration.cs](../../ShipMate.Infr
 | FR-4.3 cấu hình toàn cục | **Làm**: ngân sách/dev, ngưỡng drift mặc định. Sàn 0.65, khoảng Manager, Dual-Lock **chỉ hiện** | Sàn nằm dưới mức thấp nhất Manager chọn được; sửa sàn kéo theo khoảng Manager và Dual-Lock (C1) |
 | FR-4.3 strictness level | **Không làm** | Ngưỡng của Manager đã đóng vai trò này (C1) |
 | FR-4.4 Rule Engine | **Làm**: danh sách mẫu commit bảo trì | Luật comment và khoảng trắng là thuật toán, không phải tham số |
-| FR-4.4 "môi trường test/preview" | **Làm nhẹ**: endpoint thử commit với danh sách mẫu, không lưu | Rẻ, giúp Admin không đặt mẫu sai |
+| FR-4.4 "môi trường test/preview" | **Không làm** (bỏ 2026-11-24, mục 13.11) | Admin hiếm khi đổi mẫu, và mẫu sai cũng không lách được Rule Engine vì file vẫn phải vô hại |
 | FR-4.5 template VERIFY | **Không làm bây giờ**: giữ 5 mục cố định (mục 13.1) | Phải sửa code VERIFY của Lâm, có thể phá frontend; giá trị demo thấp |
 | FR-4.6 AI gateway | **Làm gọn**: nhật ký mỗi lần gọi AI và số đếm theo ngày | Không lưu nội dung prompt hay câu trả lời. Phiên bản prompt, p95: mục 13.3 |
 | FR-4.6 chọn model, sửa prompt trên web | **Không làm** | Prompt đi cùng schema và validator trong code; sửa trên web dễ làm hỏng cả 4 luồng AI |
@@ -184,7 +184,7 @@ Tổng cộng: **2 bảng mới** (`platform_settings`, `ai_call_logs`), **1 c�
 
 ## 6. API
 
-Mọi route dưới `/api/admin`, `[Authorize(Roles = "Administrator")]`, cộng kiểm trạng thái tài khoản ở A.2. Tổng cộng **9 API**: 3 đang có, 6 mới.
+Mọi route dưới `/api/admin`, `[Authorize(Roles = "Administrator")]`, cộng kiểm trạng thái tài khoản ở A.2. Tổng cộng **8 API**: 3 đang có, 5 mới (endpoint thử mẫu commit đã bỏ 2026-11-24).
 
 | Method | Route | Việc | Giai đoạn |
 |---|---|---|---|
@@ -195,14 +195,12 @@ Mọi route dưới `/api/admin`, `[Authorize(Roles = "Administrator")]`, cộng
 | GET | `/action-logs?page&pageSize&action&adminUserId` | Đọc nhật ký Admin, mới nhất trước | A |
 | GET | `/settings` | Cấu hình hiện tại, kèm `revision` và các giới hạn cố định (sàn 0.65, khoảng Manager 0.70–0.85, số lần Manager được đổi ngưỡng và thời gian chờ giữa hai lần) dạng chỉ đọc. Dual-Lock không có hằng số nào trong code nên không hiện | B |
 | PUT | `/settings` | Gửi đủ các trường cùng `revision`; sai revision thì 409 `SETTINGS_CHANGED_BY_OTHER` | B |
-| POST | `/settings/maintenance-patterns/test` | `{ patterns?, commitMessages: [], files?: [{ path, patch }] }`. Trả từng message có khớp không; nếu có `files` thì cả commit có được bỏ qua AI không. Không lưu | B |
 | GET | `/ai/usage?from&to` | Theo ngày và mục đích: số lần gọi, số lỗi theo `outcome`, tổng token, thời gian trung bình | C |
 | GET | `/monitoring/overview` | Số đếm (7.E) | E |
 
 Quy ước chung:
 - `from`/`to` mặc định là 30 ngày gần nhất; khoảng tối đa 365 ngày; `from < to`; theo UTC.
 - Mọi tham số query gom vào một class nhận bằng `[FromQuery]` để validator chạy (A.5).
-- Endpoint thử mẫu: tối đa 100 file, tổng `patch` không quá `Build:MaxDiffCharacters` (60.000 ký tự, cùng giới hạn BUILD).
 
 ## 7. Giai đoạn và các bước
 
@@ -335,14 +333,9 @@ Mỗi giai đoạn có migration riêng (nếu cần), test riêng và commit ri
 **B.4. Mẫu commit đọc từ cấu hình.** `MaintenanceChangePolicy.IsMaintenanceOnly(messages, files, patterns)`; `BuildAnalysisService` đọc danh sách mẫu một lần cho mỗi lần phân tích.
 
 **B.5. `PlatformSettingsService`.**
-- `GetAsync`, `UpdateAsync`, `TestPatternsAsync`.
+- `GetAsync`, `UpdateAsync`. Endpoint thử mẫu commit đã bỏ (2026-11-24), xem mục 13.11.
 - `UpdateAsync`: validator kiểm giới hạn 5.1; so `request.Revision` với giá trị vừa đọc (mục 9, ý 8); ghi một dòng `SettingsChanged` cho **mỗi** trường đổi, với `subject` là tên trường; tăng `Revision`, gán `UpdatedAt`, `UpdatedByUserId`.
 - Thêm nhánh `catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is PlatformSettings))` vào `AppDbContext.SaveChangesAsync`.
-- `TestPatternsAsync`:
-  - Đổi `IsMaintenanceMessage` thành `public` (thêm tham số `patterns`), không viết lại phần so khớp ở chỗ khác.
-  - Trả `messages: [{ message, matches }]` và, nếu có `files`, `skippedByRuleEngine` (gọi thẳng `IsMaintenanceOnly`).
-  - Tài liệu của endpoint ghi rõ: message khớp khi **chứa** một mẫu (`Contains`, không phân biệt hoa thường), nên mẫu ngắn như `fix` khớp mọi message có chữ "fix"; commit chỉ được bỏ qua AI khi mọi message khớp **và** mọi file là config, tài liệu hoặc chỉ đổi khoảng trắng, comment.
-  - Không đổi cách so khớp `Contains` (đổi là đổi hành vi BUILD, phần code của bạn).
 
 **Test cần sửa:** `LockGatePolicyTests`, `FeatureChallengePolicyTests`, `MaintenanceChangePolicyTests`, `LockServiceTests`, `FeatureChallengeServiceTests`, `BuildAnalysisServiceTests` (fake repository phải trả cấu hình), `Scenarios/LockWorld.cs`.
 
@@ -395,7 +388,6 @@ Không đo "độ dài hàng đợi": `BuildAnalysisWorker` lấy mục ra khỏ
 
 - `docs/frontend-guide.md`: API Admin; mã lỗi mới (mục 8); `PATCH /users/{id}/role` không còn; Admin không có màn hình workspace; `accountLocked` trong danh sách thành viên; ngân sách trong `LockGateDto.Budget` không còn luôn bằng 10 × số dev; access token bị từ chối khi tài khoản bị khóa (A.2).
 - README: cách đặt `AdminSeed:*`.
-- BM03: bỏ quota, plan, strictness level, chọn model và sửa prompt trên web; giữ 5 mục VERIFY cố định; tài khoản Admin là tài khoản riêng, không dùng workspace.
 - `docs/admin-test-report.md`: đã viết cho giai đoạn A và B (2026-11-23), cập nhật thêm khi làm C và E. Script kiểm HTTP không đưa vào repo (quyết định 2026-11-23, theo YAGNI); báo cáo là nơi lưu những gì đã chạy.
 
 ## 8. Mã lỗi mới
@@ -453,7 +445,7 @@ Không đo "độ dài hàng đợi": `BuildAnalysisWorker` lấy mục ra khỏ
   - Mời user bị khóa hoặc user là Admin thì 404.
   - Admin tạo workspace thì 403; Admin gọi API workspace qua guard thì 404.
   - Seed: đủ 5 trường hợp ở A.17.
-- **B:** kiểm giới hạn từng trường; revision cũ thì 409; ghi `SettingsChanged` cho từng trường đổi; workspace mới chép giá trị; **workspace cũ giữ nguyên**; Lock với ngân sách 15/dev; mẫu commit mới được Rule Engine dùng; endpoint thử mẫu.
+- **B:** kiểm giới hạn từng trường; revision cũ thì 409; ghi `SettingsChanged` cho từng trường đổi; workspace mới chép giá trị; **workspace cũ giữ nguyên**; Lock với ngân sách 15/dev; mẫu commit mới được Rule Engine dùng.
 - **C:** mỗi `outcome` (kể cả `cancelled` và `JsonException`); lỗi ghi nhật ký không làm hỏng lời gọi AI; số đếm của `/ai/usage`.
 - **E:** số đếm đúng trên dữ liệu giả.
 
@@ -475,7 +467,7 @@ Không gọi AI hay GitHub thật khi chưa hỏi (quy ước ở `03-build.md`)
 | C4 | Admin chọn model AI trên web? | Không | 2026-11-21 |
 | C6 | Tạo tài khoản Admin bằng cách nào? | Seed lúc khởi động từ `AdminSeed:*`. Không nâng Developer lên Admin; xóa API đổi role (A.3, A.17) | 2026-11-21 |
 | C9 | Các ý phụ trong ghi chú 2026-11-06 (buộc đăng xuất, Admin ngắt GitHub, gửi lại email xác thực, cảnh báo đăng nhập sai) | Không làm ý nào bây giờ. Buộc đăng xuất giữ thiết kế ở mục 13.5 | 2026-11-21 |
-| C12 | Admin có dùng workspace như người thường không? | Không. Chặn ở guard, tạo workspace và mời (A.6, A.16). Ghi BM03 | 2026-11-21 |
+| C12 | Admin có dùng workspace như người thường không? | Không. Chặn ở guard, tạo workspace và mời (A.6, A.16) | 2026-11-21 |
 | — | Phạm vi Admin | Rút gọn: bỏ D, gọn C và E, bỏ khóa DB, buộc đăng xuất, `lastActiveAt`, email mở khóa, các chốt chặn phụ, tự chuyển Manager (mục 13) | 2026-11-21 |
 
 ### 12.2. Còn mở (đề xuất của kế hoạch)
@@ -567,6 +559,12 @@ Các phần dưới đây đã thiết kế và đối chiếu với code, nhưn
 
 **Thiết kế:** mở khóa thì gửi email bằng `TrySendAsync`.
 
+### 13.11. Endpoint thử mẫu commit
+
+**Vì sao bỏ (2026-11-24, sau khi đã làm và kiểm):** Admin hiếm khi đổi mẫu commit, và mẫu đặt sai cũng không nguy hiểm: Rule Engine chỉ bỏ qua AI khi mọi file thay đổi đều vô hại (config, tài liệu, chỉ khoảng trắng và comment), nên đổi mẫu không lách được việc kiểm code. Endpoint tốn một DTO, một validator đọc cả cấu hình BUILD, 15 test và một màn hình frontend.
+
+**Thiết kế:** `POST /api/admin/settings/maintenance-patterns/test`, body `{ patterns?, commitMessages: [], files?: [{ path, patch }] }`, trả `messages: [{ message, matches }]` và `skippedByRuleEngine` (null khi không gửi `files`). Không lưu, không ghi nhật ký. Giới hạn: 1–100 message (mỗi message ≤ 1000 ký tự), ≤ 100 file, tổng `patch` ≤ `Build:MaxDiffCharacters`. Mẫu tự cho theo cùng luật với khi lưu. Cần đổi `MaintenanceChangePolicy.IsMaintenanceMessage` thành `public` (hiện là `private`). Code đã viết và đã kiểm HTTP thật trước khi bỏ; lấy lại được từ lịch sử git của nhánh `feature/admin`.
+
 ## 14. Lịch sử thay đổi của tài liệu
 
 - **2026-11-14:** viết lần đầu, đối chiếu với `feature/verify` (commit `0c6617a`).
@@ -576,3 +574,4 @@ Các phần dưới đây đã thiết kế và đối chiếu với code, nhưn
   - Viết lại toàn bộ tài liệu: gom quyết định vào mục 12, thêm bảng phân đợt (7.0), bảng mã lỗi (mục 8), điều kiện "xong khi" cho từng giai đoạn.
   - **Rút gọn phạm vi:** bỏ giai đoạn D (template VERIFY); C chỉ còn nhật ký và số đếm (bỏ phiên bản prompt, p95); E chỉ còn `/monitoring/overview` (bỏ độ trễ API, nhật ký lỗi, chỉ số độ chính xác drift); A bỏ khóa DB, buộc đăng xuất, `lastActiveAt`, email mở khóa, chặn Admin ở chỗ phụ, tự chuyển Manager; gộp controller còn 2 cái mới. Chốt C2, C4, C9. Mọi phần bỏ giữ thiết kế ở mục 13. Kết quả: 2 bảng mới thay vì 4, 9 API thay vì 15, 5 mã lỗi mới thay vì 6, 7 câu hỏi còn mở thay vì 10.
 - **2026-11-22:** giai đoạn A đã code trên nhánh `feature/admin` (chưa commit) và chạy kiểm HTTP thật trên DB dev (34 ca đạt). Phát hiện phép đếm "Admin cuối" (A.4) không có tác dụng và hai Admin khóa nhau cùng lúc thì không còn Admin nào. Đã chốt: Admin không đổi trạng thái của Admin (403 `ADMIN_ACCOUNT_PROTECTED`); bỏ `LAST_ADMINISTRATOR`. Thiết kế có khóa DB giữ ở mục 13.6.
+- **2026-11-24:** làm giai đoạn C (nhật ký gọi AI, gồm sửa L9) và E (`monitoring/overview`), viết mục 2.13 trong `frontend-guide.md`. Sau khi rà lại, bỏ endpoint thử mẫu commit (mục 13.11): còn 8 API Admin.

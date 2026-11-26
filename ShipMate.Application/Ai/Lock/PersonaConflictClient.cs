@@ -1,3 +1,4 @@
+using ShipMate.Domain.Enums;
 using System.Text.Json;
 using ShipMate.Application.Ai.Define;
 using ShipMate.Application.DTOs.Ai;
@@ -42,6 +43,7 @@ public static class PersonaConflictClient
     {
         var response = await aiGateway.GenerateJsonAsync(new AiJsonRequest
         {
+            Purpose = AiCallPurpose.PersonaConflict,
             SystemInstruction = SystemInstruction.Value,
             UserPrompt = JsonSerializer.Serialize(input, AiJson.Options),
             JsonSchema = OutputSchema.Value

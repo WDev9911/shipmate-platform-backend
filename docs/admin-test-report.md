@@ -1,12 +1,12 @@
 # Báo cáo kiểm thử module Admin
 
-Kiểm thử cho giai đoạn A (tài khoản) và B (cấu hình nền tảng) của [kế hoạch Admin](flows/06-admin.md), trên nhánh `feature/admin`. Chưa gồm giai đoạn C (nhật ký AI) và E (giám sát), vì chưa làm.
+Kiểm thử cho các giai đoạn A (tài khoản), B (cấu hình nền tảng), C (nhật ký gọi AI) và E (giám sát) của [kế hoạch Admin](flows/06-admin.md), trên nhánh `feature/admin`.
 
 ## 1. Cách kiểm
 
 | Lớp | Cách làm | Ghi chú |
 |---|---|---|
-| Unit test | `dotnet test`, xUnit và NSubstitute | **1005 ca đạt, 0 lỗi** (trước giai đoạn A có 849) |
+| Unit test | `dotnet test`, xUnit và NSubstitute | **1195 ca đạt, 0 lỗi** sau khi gộp SHIP và bỏ endpoint thử mẫu commit (trước giai đoạn A có 849; sau A và B có 1005) |
 | HTTP thật | API chạy ở `http://localhost:5140` với PostgreSQL dev, gọi bằng script Node | Script **không nằm trong repo** (xem mục 6) |
 
 **Điều kiện chạy HTTP:**
@@ -83,11 +83,30 @@ Lần chạy đầu 56 ca: **53 đạt, 3 báo fail**. Cả 3 được giải th
 | Nhật ký | `GET /action-logs?action=SettingsChanged` | 3 dòng cho 3 trường đã đổi, không có tài khoản đích, đúng giá trị cũ và mới |
 | Nhật ký | Đổi riêng ngân sách | thêm đúng 1 dòng |
 | **Hai Admin lưu cùng lúc** | 4 lượt, hai `PUT` song song cùng `revision` | **lần nào cũng đúng 1 bên 200, 1 bên 409** |
-| Thử mẫu | Dùng mẫu đã lưu; dùng mẫu tự cho (không lưu); kèm file (comment thì bỏ qua AI, logic thì không) | đúng cả ba |
-| Thử mẫu | Không có message; 101 file; patch tổng vượt 60.000 ký tự; mẫu 2 ký tự; Developer gọi | 400, 400, 400, 400, 403 |
-| Thử mẫu | Số dòng nhật ký sau các lần thử | không tăng (endpoint không ghi gì) |
+| Thử mẫu (endpoint đã bỏ 2026-11-24) | Dùng mẫu đã lưu; dùng mẫu tự cho (không lưu); kèm file (comment thì bỏ qua AI, logic thì không) | đúng cả ba |
+| Thử mẫu (đã bỏ) | Không có message; 101 file; patch tổng vượt 60.000 ký tự; mẫu 2 ký tự; Developer gọi | 400, 400, 400, 400, 403 |
+| Thử mẫu (đã bỏ) | Số dòng nhật ký sau các lần thử | không tăng (endpoint không ghi gì) |
 | Workspace mới | Tạo workspace khi cấu hình là (15, 0.80), rồi đổi thành (30, 0.70) và tạo thêm một workspace | workspace thứ nhất `15 | 0.80`, workspace thứ hai `30 | 0.70`, workspace thứ nhất không bị đổi |
 | Workspace cũ | 21 workspace có sẵn | vẫn đều là 10 |
+
+## 3b. Giai đoạn C và E: kết quả (2026-11-24)
+
+**Unit test** (tổng 1210 đạt sau khi gộp SHIP; còn 1195 sau khi bỏ endpoint thử mẫu commit): mỗi lối ra của gateway Gemini ghi đúng một dòng nhật ký với đúng kết quả (thành công, 429, lỗi HTTP, lỗi mạng, hết thời gian chờ, body không phải JSON, không có output dùng được, bị hủy), giữ số token kể cả khi output hỏng, nhật ký không có cột prompt, câu trả lời hay workspace; writer nuốt lỗi DB. **Test L9** (hủy giữa lúc gọi AI phải là hủy, không phải "provider unavailable") đã chạy với code cũ: **đỏ**; với code mới: **xanh**.
+
+**HTTP thật**, với 5 dòng nhật ký chèn bằng SQL (không gọi Gemini):
+
+| Ca | Kết quả |
+|---|---|
+| `ai/usage`, `monitoring/overview` không token | 401 |
+| `ai/usage` mặc định | 200, đúng 30 ngày; gom theo ngày UTC (nửa đêm) và luồng |
+| Một ngày có 3 lần gọi của BUILD (2 thành công, 1 bị 429) | `calls 3`, `succeeded 2`, `rateLimited 1`; token cộng đúng 150 / 30 / 10 (token thiếu tính là 0); thời gian trung bình 2100 ms |
+| Dòng 40 ngày trước | Không có trong khoảng mặc định; có khi `from` là ngày không ghi múi giờ, lùi 45 ngày |
+| `from` sau `to`, khoảng hơn 365 ngày, `from=yesterday` | 400 cả ba |
+| `monitoring/overview` | 200; mọi trạng thái đều có mặt (0 khi không có); số workspace (4 hoạt động, 17 lưu trữ) và số bản ghi `audit_trail` theo 5 loại **khớp với truy vấn SQL trực tiếp** |
+
+Một ca báo fail do script đoán sai số liệu (mong 21 workspace hoạt động trong khi 17 đã lưu trữ); API đúng.
+
+**Chưa kiểm:** chưa có dòng nhật ký nào do lời gọi Gemini thật ghi ra (cần dùng DEFINE, LOCK hoặc BUILD có AI thật).
 
 ## 4. Ba ca báo fail ở lần chạy đầu của giai đoạn B
 

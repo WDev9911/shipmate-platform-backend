@@ -6,5 +6,4 @@ public interface IPlatformSettingsService
 {
     Task<PlatformSettingsDto> GetAsync();
     Task<PlatformSettingsDto> UpdateAsync(Guid adminUserId, UpdatePlatformSettingsRequest request);
-    Task<TestMaintenancePatternsResponse> TestMaintenancePatternsAsync(TestMaintenancePatternsRequest request);
 }

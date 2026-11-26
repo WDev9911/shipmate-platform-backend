@@ -1,3 +1,4 @@
+using ShipMate.Domain.Enums;
 using System.Text.Json;
 using ShipMate.Application.DTOs.Ai;
 using ShipMate.Application.Exceptions;
@@ -23,6 +24,7 @@ public static class BuildAnalysisClient
     {
         var response = await aiGateway.GenerateJsonAsync(new AiJsonRequest
         {
+            Purpose = AiCallPurpose.BuildAnalysis,
             SystemInstruction = SystemInstruction.Value,
             UserPrompt = JsonSerializer.Serialize(input, AiJson.Options),
             JsonSchema = OutputSchema.Value

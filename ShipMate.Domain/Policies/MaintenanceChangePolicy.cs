@@ -22,7 +22,7 @@ public static class MaintenanceChangePolicy
         && files.All(HasNoLogicChange);
 
     /// <summary>A message counts when it contains one of the patterns, whatever the case: "fix" matches every message with "fix".</summary>
-    public static bool IsMaintenanceMessage(string message, IReadOnlyCollection<string> patterns) =>
+    private static bool IsMaintenanceMessage(string message, IReadOnlyCollection<string> patterns) =>
         patterns.Any(pattern => message.Contains(pattern, StringComparison.OrdinalIgnoreCase));
 
     private static bool HasNoLogicChange(ChangedFile file) =>

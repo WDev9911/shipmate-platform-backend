@@ -26,9 +26,4 @@ public class AdminSettingsController : ControllerBase
     [HttpPut]
     public async Task<IActionResult> Update(UpdatePlatformSettingsRequest request) =>
         Ok(await _settingsService.UpdateAsync(_currentUserService.UserId!.Value, request));
-
-    /// <summary>Nothing is saved.</summary>
-    [HttpPost("maintenance-patterns/test")]
-    public async Task<IActionResult> TestMaintenancePatterns(TestMaintenancePatternsRequest request) =>
-        Ok(await _settingsService.TestMaintenancePatternsAsync(request));
 }

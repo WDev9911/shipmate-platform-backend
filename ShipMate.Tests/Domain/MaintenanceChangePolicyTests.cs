@@ -93,7 +93,7 @@ public class MaintenanceChangePolicyTests
 
     [Fact]
     public void APatternMatchesInsideWords_SoAShortOneMatchesMore() =>
-        Assert.True(MaintenanceChangePolicy.IsMaintenanceMessage("prefix the names", ["fix"]));
+        Assert.True(MaintenanceChangePolicy.IsMaintenanceOnly(["prefix the names"], [OnlyAComment], ["fix"]));
 
     [Fact]
     public void TheDefaultPatterns_AreTheFourThatWereBuiltIn() =>

@@ -17,6 +17,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminService, AdminService>();
         services.AddScoped<AdministratorSeeder>();
         services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
+        services.AddScoped<IAdminReportsService, AdminReportsService>();
         services.AddScoped<IWorkspaceAccessGuard, WorkspaceAccessGuard>();
         services.AddScoped<IWorkspaceService, WorkspaceService>();
         services.AddScoped<IProductDefinitionService, ProductDefinitionService>();

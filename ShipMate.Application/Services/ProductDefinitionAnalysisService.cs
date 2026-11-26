@@ -130,6 +130,7 @@ public class ProductDefinitionAnalysisService : IProductDefinitionAnalysisServic
         {
             response = await _aiGateway.GenerateJsonAsync(new AiJsonRequest
             {
+                Purpose = AiCallPurpose.DefineAnalysis,
                 SystemInstruction = SystemInstruction.Value,
                 UserPrompt = JsonSerializer.Serialize(input, AiJson.Options),
                 JsonSchema = OutputSchema.Value

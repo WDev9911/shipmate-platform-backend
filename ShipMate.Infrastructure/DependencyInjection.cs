@@ -29,6 +29,8 @@ public static class DependencyInjection
         services.AddScoped<IGitHubConnectionRepository, GitHubConnectionRepository>();
         services.AddScoped<IAdminActionLogRepository, AdminActionLogRepository>();
         services.AddScoped<IPlatformSettingsRepository, PlatformSettingsRepository>();
+        services.AddScoped<IPlatformReportRepository, PlatformReportRepository>();
+        services.AddSingleton<IAiCallLogWriter, AiCallLogWriter>();
         services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
         services.AddScoped<IWorkspaceMemberRepository, WorkspaceMemberRepository>();
         services.AddScoped<IProductDefinitionRepository, ProductDefinitionRepository>();

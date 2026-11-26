@@ -6,7 +6,6 @@ using ShipMate.Application.Interfaces.Services;
 using ShipMate.Domain.Entities;
 using ShipMate.Domain.Enums;
 using ShipMate.Domain.Policies;
-using ShipMate.Domain.ValueObjects;
 
 namespace ShipMate.Application.Services;
 
@@ -85,32 +84,6 @@ public class PlatformSettingsService : IPlatformSettingsService
         await _settings.SaveChangesAsync();
 
         return ToDto(settings);
-    }
-
-    public async Task<TestMaintenancePatternsResponse> TestMaintenancePatternsAsync(TestMaintenancePatternsRequest request)
-    {
-        var patterns = request.Patterns is null
-            ? (await _settings.GetAsync()).MaintenanceCommitPatterns
-            : PlatformSettingsLimits.NormalizePatterns(request.Patterns);
-
-        var response = new TestMaintenancePatternsResponse
-        {
-            Messages = request.CommitMessages
-                .Select(message => new TestedMessageDto
-                {
-                    Message = message,
-                    Matches = MaintenanceChangePolicy.IsMaintenanceMessage(message, patterns)
-                })
-                .ToList()
-        };
-
-        if (request.Files is not null)
-        {
-            var files = request.Files.Select(f => new ChangedFile(f.Path, "modified", f.Patch)).ToList();
-            response.SkippedByRuleEngine = MaintenanceChangePolicy.IsMaintenanceOnly(request.CommitMessages, files, patterns);
-        }
-
-        return response;
     }
 
     private static PlatformSettingsDto ToDto(PlatformSettings settings) => new()
