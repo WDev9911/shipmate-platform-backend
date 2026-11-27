@@ -9,11 +9,7 @@ public class ResetPasswordRequestValidator : AbstractValidator<ResetPasswordRequ
     {
         RuleFor(x => x.ResetTicket).NotEmpty();
 
-        RuleFor(x => x.NewPassword)
-            .NotEmpty()
-            .MinimumLength(8)
-            .Matches("[A-Z]").WithMessage("Password must contain at least 1 uppercase letter.")
-            .Matches("[0-9]").WithMessage("Password must contain at least 1 digit.");
+        RuleFor(x => x.NewPassword).MeetsPasswordRules();
 
         RuleFor(x => x.ConfirmNewPassword)
             .Equal(x => x.NewPassword).WithMessage("ConfirmNewPassword must match NewPassword.");

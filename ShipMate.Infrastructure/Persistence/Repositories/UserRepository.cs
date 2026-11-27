@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ShipMate.Application.DTOs.Admin;
 using ShipMate.Application.Interfaces.Repositories;
 using ShipMate.Domain.Entities;
 
@@ -22,18 +23,40 @@ public class UserRepository : IUserRepository
     public async Task<User?> GetByGitHubIdAsync(string githubId) =>
         await _context.Users.FirstOrDefaultAsync(u => u.GitHubId == githubId);
 
-    public async Task<(List<User> Items, int TotalCount)> GetPagedAsync(int page, int pageSize)
+    public async Task<(List<User> Items, int TotalCount)> GetPagedAsync(AdminUserQuery filter)
     {
-        var query = _context.Users.OrderByDescending(u => u.CreatedAt);
+        var query = _context.Users.AsQueryable();
 
-        var totalCount = await query.CountAsync();
-        var items = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        if (filter.Role is { } role)
+        {
+            query = query.Where(u => u.Role == role);
+        }
+
+        if (filter.Status is { } status)
+        {
+            query = query.Where(u => u.Status == status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            // % and _ in what the admin typed are letters to look for, not wildcards.
+            var pattern = $"%{EscapeLike(filter.Search.Trim())}%";
+            query = query.Where(u =>
+                EF.Functions.ILike(u.Email, pattern, "\\") || EF.Functions.ILike(u.DisplayName, pattern, "\\"));
+        }
+
+        var ordered = query.OrderByDescending(u => u.CreatedAt);
+        var totalCount = await ordered.CountAsync();
+        var items = await ordered
+            .Skip((filter.Page - 1) * filter.PageSize)
+            .Take(filter.PageSize)
             .ToListAsync();
 
         return (items, totalCount);
     }
+
+    private static string EscapeLike(string value) =>
+        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
     public async Task AddAsync(User user) =>
         await _context.Users.AddAsync(user);

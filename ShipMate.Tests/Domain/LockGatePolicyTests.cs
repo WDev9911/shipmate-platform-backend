@@ -14,7 +14,7 @@ public class LockGatePolicyTests
     }
 
     private static LockGateResult Evaluate(IReadOnlyList<Feature> features, params int?[] skills) =>
-        LockGatePolicy.Evaluate(features, skills);
+        LockGatePolicy.Evaluate(features, skills, 10);
 
     // ---- passing ----
 
@@ -150,5 +150,37 @@ public class LockGatePolicyTests
         Assert.NotEmpty(result.SkillCeilingViolations);
         Assert.True(result.BudgetExceeded);
         Assert.NotEmpty(result.BrokenDependencies);
+    }
+
+    // ---- the budget belongs to the workspace ----
+
+    [Theory]
+    [InlineData(5, 1, 5)]
+    [InlineData(15, 1, 15)]
+    [InlineData(15, 3, 45)]
+    [InlineData(50, 2, 100)]
+    public void Budget_IsThePointsPerDeveloperTimesTheActiveDevelopers(int perDeveloper, int developers, int expected)
+    {
+        var skills = Enumerable.Repeat<int?>(5, developers).ToArray();
+
+        Assert.Equal(expected, LockGatePolicy.Evaluate([Scored("a", 1)], skills, perDeveloper).Budget);
+    }
+
+    [Fact]
+    public void TheSameFeatures_PassWithABiggerBudget_AndBlockWithTheDefaultOne()
+    {
+        IReadOnlyList<Feature> features = [Scored("a", 4), Scored("b", 4), Scored("c", 3)];
+
+        Assert.True(LockGatePolicy.Evaluate(features, [4], 10).BudgetExceeded);
+        Assert.False(LockGatePolicy.Evaluate(features, [4], 15).BudgetExceeded);
+    }
+
+    [Fact]
+    public void ASmallerBudget_BlocksWhatTenWouldAllow()
+    {
+        var result = LockGatePolicy.Evaluate([Scored("a", 3), Scored("b", 3)], [4], 5);
+
+        Assert.True(result.BudgetExceeded);
+        Assert.False(result.IsPassed);
     }
 }

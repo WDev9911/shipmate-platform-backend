@@ -26,6 +26,7 @@ public class BuildAnalysisService : IBuildAnalysisService
     private readonly IAiGateway _aiGateway;
     private readonly IConfiguration _configuration;
     private readonly IWorkspaceNotifier _notifier;
+    private readonly IPlatformSettingsRepository _platformSettings;
     private readonly ILogger<BuildAnalysisService> _logger;
 
     public BuildAnalysisService(
@@ -37,8 +38,10 @@ public class BuildAnalysisService : IBuildAnalysisService
         IAiGateway aiGateway,
         IConfiguration configuration,
         IWorkspaceNotifier notifier,
+        IPlatformSettingsRepository platformSettings,
         ILogger<BuildAnalysisService> logger)
     {
+        _platformSettings = platformSettings;
         _submissions = submissions;
         _alerts = alerts;
         _workspaces = workspaces;
@@ -186,8 +189,14 @@ public class BuildAnalysisService : IBuildAnalysisService
         }
 
         // A baseline GitHub no longer knows (force push) can't vouch for anything: the AI looks at everything.
-        if (sinceBaseline is null || sinceBaseline.Truncated
-            || !MaintenanceChangePolicy.IsMaintenanceOnly(sinceBaseline.CommitMessages, sinceBaseline.Files))
+        if (sinceBaseline is null || sinceBaseline.Truncated)
+        {
+            return false;
+        }
+
+        // Read once for this analysis, at the moment it is needed.
+        var patterns = (await _platformSettings.GetAsync()).MaintenanceCommitPatterns;
+        if (!MaintenanceChangePolicy.IsMaintenanceOnly(sinceBaseline.CommitMessages, sinceBaseline.Files, patterns))
         {
             return false;
         }

@@ -37,7 +37,7 @@ public class RepoInvitationTests
             Substitute.For<IProductDefinitionRepository>(), Substitute.For<IUserRepository>(),
             Substitute.For<IGitHubConnectionRepository>(), Substitute.For<IGitHubOAuthService>(), _app,
             Substitute.For<IEncryptionService>(), Substitute.For<IEmailSender>(),
-            Substitute.For<IWorkspaceNotifier>(), _audit, Substitute.For<IFeatureAssignmentRepository>(), mapper);
+            Substitute.For<IWorkspaceNotifier>(), _audit, Substitute.For<IFeatureAssignmentRepository>(), Substitute.For<IPlatformSettingsRepository>(), mapper);
 
         _invitation = new WorkspaceMember
         {

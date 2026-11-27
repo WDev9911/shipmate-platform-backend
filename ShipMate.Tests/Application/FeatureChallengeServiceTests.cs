@@ -666,4 +666,43 @@ public class FeatureChallengeServiceTests
     {
         await Assert.ThrowsAsync<NotFoundException>(() => _service.GetAsync(_manager, _workspaceId, Guid.NewGuid()));
     }
+
+    // ---- the budget is the workspace's own ----
+
+    [Fact]
+    public async Task Approve_AddDirectly_WhatBlocksAtTenPerDeveloper_PassesInAWorkspaceWithABiggerBudget()
+    {
+        _guard.GetWorkspaceAsManagerAsync(_manager, _workspaceId).Returns(new Workspace { ComplexityBudgetPerDeveloper = 50 });
+        var challenge = OpenChallenge(complexity: 5);
+
+        var next = await Approve(challenge, new ApproveChallengeRequest { Action = ChallengeAction.AddDirectly });
+
+        Assert.Equal(2, next.Version);
+        Assert.Equal(ChallengeStatus.Approved, challenge.Status);
+    }
+
+    [Fact]
+    public async Task Approve_AddDirectly_ASmallerWorkspaceBudget_BlocksWhatTenWouldAllow()
+    {
+        _guard.GetWorkspaceAsManagerAsync(_manager, _workspaceId).Returns(new Workspace { ComplexityBudgetPerDeveloper = 5 });
+        var challenge = OpenChallenge(complexity: 1);
+
+        var ex = await Assert.ThrowsAsync<LockGateFailedException>(() => _service.ApproveAsync(
+            _manager, _workspaceId, challenge.Id, new ApproveChallengeRequest { Action = ChallengeAction.AddDirectly }));
+
+        Assert.True(ex.Gate.BudgetExceeded);
+        Assert.Equal(5, ex.Gate.Budget);
+    }
+
+    [Fact]
+    public async Task Get_RecommendationUsesTheWorkspaceBudget()
+    {
+        _b.Complexity = 7;
+        var challenge = OpenChallenge(complexity: 4);
+        _guard.GetWorkspaceAsMemberAsync(Arg.Any<Guid>(), _workspaceId).Returns(new Workspace { ComplexityBudgetPerDeveloper = 50 });
+
+        var dto = await _service.GetAsync(_manager, _workspaceId, challenge.Id);
+
+        Assert.Equal(ChallengeAction.AddDirectly, dto.Recommendation!.Action);
+    }
 }

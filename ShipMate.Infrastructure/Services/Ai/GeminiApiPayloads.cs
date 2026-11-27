@@ -54,6 +54,9 @@ internal class GeminiGenerateContentResponse
 
     [JsonPropertyName("modelVersion")]
     public string? ModelVersion { get; set; }
+
+    [JsonPropertyName("usageMetadata")]
+    public GeminiUsageMetadata? UsageMetadata { get; set; }
 }
 
 internal class GeminiCandidate
@@ -69,4 +72,17 @@ internal class GeminiPromptFeedback
 {
     [JsonPropertyName("blockReason")]
     public string? BlockReason { get; set; }
+}
+
+// How many tokens the call used, as Gemini reports them. Any of them can be missing.
+internal class GeminiUsageMetadata
+{
+    [JsonPropertyName("promptTokenCount")]
+    public int? PromptTokenCount { get; set; }
+
+    [JsonPropertyName("candidatesTokenCount")]
+    public int? CandidatesTokenCount { get; set; }
+
+    [JsonPropertyName("thoughtsTokenCount")]
+    public int? ThoughtsTokenCount { get; set; }
 }

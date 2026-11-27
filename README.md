@@ -102,6 +102,10 @@ Hướng dẫn chi tiết cho Frontend (các khóa cần điền, tạo GitHub O
 
 Chạy test: `dotnet test`.
 
+### Tài khoản Administrator
+
+Admin là tài khoản riêng, không nâng từ Developer. Khai báo mục `AdminSeed` (trong `appsettings.Development.json`, user-secrets hoặc biến môi trường `AdminSeed__Email`, `AdminSeed__Password`, `AdminSeed__DisplayName`); lần chạy đầu sau khi tạo bảng, app tạo tài khoản đó nếu chưa có. Mật khẩu cần tối thiểu 8 ký tự, có 1 chữ hoa và 1 chữ số. Muốn thêm Admin: đổi `AdminSeed:Email` rồi chạy lại. Không ghi mật khẩu vào `appsettings.json` đã commit.
+
 ## Team
 
 | Vai trò | Thành viên |

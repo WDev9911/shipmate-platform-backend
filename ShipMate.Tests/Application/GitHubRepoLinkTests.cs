@@ -40,7 +40,7 @@ public class GitHubRepoLinkTests
         _service = new WorkspaceService(
             _workspaces, _members, _guard,
             Substitute.For<IProductDefinitionRepository>(), Substitute.For<IUserRepository>(),
-            connections, _gitHub, _app, encryption, Substitute.For<IEmailSender>(), Substitute.For<IWorkspaceNotifier>(), Substitute.For<IAuditTrail>(), _assignments, Substitute.For<IMapper>());
+            connections, _gitHub, _app, encryption, Substitute.For<IEmailSender>(), Substitute.For<IWorkspaceNotifier>(), Substitute.For<IAuditTrail>(), _assignments, Substitute.For<IPlatformSettingsRepository>(), Substitute.For<IMapper>());
 
         _guard.GetWorkspaceAsManagerAsync(_managerId, _workspaceId).Returns(_workspace);
         _gitHub.GetUserRepositoriesAsync("manager-token")

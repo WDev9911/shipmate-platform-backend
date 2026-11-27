@@ -111,6 +111,7 @@ public class LockedDefinitionTests
         Substitute.For<IWorkspaceNotifier>(),
         Substitute.For<IAuditTrail>(),
         Substitute.For<IFeatureAssignmentRepository>(),
+        Substitute.For<IPlatformSettingsRepository>(),
         Substitute.For<IMapper>());
 
     [Fact]

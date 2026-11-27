@@ -8,18 +8,22 @@ namespace ShipMate.Domain.Policies;
 /// </summary>
 public static class MaintenanceChangePolicy
 {
-    private static readonly string[] MaintenanceMessages = ["fix typo", "refactor", "bump version", "format code"];
+    /// <summary>The words in use until an administrator sets others; also what the settings row starts with.</summary>
+    public static readonly IReadOnlyList<string> DefaultPatterns = ["fix typo", "refactor", "bump version", "format code"];
+
     private static readonly string[] CommentStarts = ["//", "/*", "*/", "<!--"];
     // These start real code too (#include, *ptr, --counter), so only count when a space or the end follows.
     private static readonly string[] SpacedCommentMarks = ["#", "*", "--"];
 
-    public static bool IsMaintenanceOnly(IReadOnlyCollection<string> commitMessages, IReadOnlyCollection<ChangedFile> files) =>
+    public static bool IsMaintenanceOnly(
+        IReadOnlyCollection<string> commitMessages, IReadOnlyCollection<ChangedFile> files, IReadOnlyCollection<string> patterns) =>
         commitMessages.Count > 0
-        && commitMessages.All(IsMaintenanceMessage)
+        && commitMessages.All(message => IsMaintenanceMessage(message, patterns))
         && files.All(HasNoLogicChange);
 
-    private static bool IsMaintenanceMessage(string message) =>
-        MaintenanceMessages.Any(pattern => message.Contains(pattern, StringComparison.OrdinalIgnoreCase));
+    /// <summary>A message counts when it contains one of the patterns, whatever the case: "fix" matches every message with "fix".</summary>
+    private static bool IsMaintenanceMessage(string message, IReadOnlyCollection<string> patterns) =>
+        patterns.Any(pattern => message.Contains(pattern, StringComparison.OrdinalIgnoreCase));
 
     private static bool HasNoLogicChange(ChangedFile file) =>
         IsConfigOrDocPath(file.Path) || (file.Patch is not null && IsOnlyWhitespaceOrComments(file.Patch));

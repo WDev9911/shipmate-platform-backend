@@ -90,7 +90,7 @@ internal sealed class LockWorld
             Substitute.For<IWorkspaceRepository>(), Members, guard, Definitions,
             Substitute.For<IUserRepository>(), Substitute.For<IGitHubConnectionRepository>(),
             Substitute.For<IGitHubOAuthService>(), Substitute.For<IGitHubAppService>(), Substitute.For<IEncryptionService>(),
-            Substitute.For<IEmailSender>(), Notifier, Substitute.For<IAuditTrail>(), Substitute.For<IFeatureAssignmentRepository>(), mapper);
+            Substitute.For<IEmailSender>(), Notifier, Substitute.For<IAuditTrail>(), Substitute.For<IFeatureAssignmentRepository>(), Substitute.For<IPlatformSettingsRepository>(), mapper);
     }
 
     // ---- building the scene ----

@@ -14,10 +14,12 @@ namespace ShipMate.API.Hubs;
 public class WorkspaceHub : Hub
 {
     private readonly IWorkspaceMemberRepository _members;
+    private readonly HubConnectionRegistry _registry;
 
-    public WorkspaceHub(IWorkspaceMemberRepository members)
+    public WorkspaceHub(IWorkspaceMemberRepository members, HubConnectionRegistry registry)
     {
         _members = members;
+        _registry = registry;
     }
 
     public static string WorkspaceGroup(Guid workspaceId) => $"workspace:{workspaceId}";
@@ -26,8 +28,16 @@ public class WorkspaceHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        await Groups.AddToGroupAsync(Context.ConnectionId, UserGroup(CurrentUserId()));
+        var userId = CurrentUserId();
+        _registry.Add(userId, Context);
+        await Groups.AddToGroupAsync(Context.ConnectionId, UserGroup(userId));
         await base.OnConnectedAsync();
+    }
+
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        _registry.Remove(Context.ConnectionId);
+        return base.OnDisconnectedAsync(exception);
     }
 
     public async Task JoinWorkspace(Guid workspaceId)

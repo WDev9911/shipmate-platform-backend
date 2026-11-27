@@ -1,3 +1,4 @@
+using ShipMate.Domain.Enums;
 using System.Text.Json;
 using ShipMate.Application.DTOs.Ai;
 using ShipMate.Application.Exceptions;
@@ -19,6 +20,7 @@ public static class ComplexityScoringClient
     {
         var response = await aiGateway.GenerateJsonAsync(new AiJsonRequest
         {
+            Purpose = AiCallPurpose.ComplexityScoring,
             SystemInstruction = SystemInstruction.Value,
             UserPrompt = JsonSerializer.Serialize(input, AiJson.Options),
             JsonSchema = OutputSchema.Value

@@ -53,6 +53,10 @@ public class WorkspaceConfiguration : IEntityTypeConfiguration<Workspace>
             // A change is saved only if the value is still the one it was based on, so two racing changes can't both win.
             .IsConcurrencyToken();
 
+        builder.Property(w => w.ComplexityBudgetPerDeveloper)
+            .HasColumnName("complexity_budget_per_developer")
+            .HasDefaultValue(10);
+
         builder.Property(w => w.FirstLockedAt).HasColumnName("first_locked_at");
         builder.Property(w => w.ShipOwnershipToken).HasColumnName("ship_ownership_token").HasMaxLength(64).IsRequired();
 

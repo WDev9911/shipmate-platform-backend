@@ -1,6 +1,6 @@
 # Hướng dẫn cho Frontend (đọc cả bởi AI của FE)
 
-Cập nhật: 2026-11-07, nhánh `feature/build`. File này gom những gì Frontend cần biết khi nối với backend ShipMate: **thay đổi API gần đây**, **luồng GitHub** và **cách chạy GitHub ở máy local**. Chi tiết nội bộ của từng luồng nằm ở `docs/flows/` (không bắt buộc đọc).
+Cập nhật: 2026-11-24, nhánh `feature/admin` (thêm mục 2.13 Admin). File này gom những gì Frontend cần biết khi nối với backend ShipMate: **thay đổi API gần đây**, **luồng GitHub** và **cách chạy GitHub ở máy local**. Chi tiết nội bộ của từng luồng nằm ở `docs/flows/` (không bắt buộc đọc).
 
 > **Ghi chú cho AI đang đọc file này.** Khi viết code Frontend:
 > 1. Dựa vào `errorCode` (chuỗi cố định) để quyết định hiển thị, **không** dựa vào `title` hay `detail` (câu chữ có thể đổi).
@@ -366,6 +366,106 @@ SHIP xác nhận version **mới nhất** đang chạy trên production, rồi c
 
 **SignalR:** sự kiện `ShipCardMinted` gửi tới mọi thành viên: `{ "cardId", "version", "score", "timeToShipSeconds" }`. Tải lại `readiness` và `cards` khi nhận.
 
+### 2.13. Admin: tài khoản, cấu hình nền tảng, báo cáo (có thay đổi phá API cũ)
+
+Mọi route dưới `/api/admin`, chỉ tài khoản `Administrator` gọi được (Developer nhận 403). Admin **chỉ thấy số tổng hợp**, không xem được nội dung workspace nào. Chi tiết nghiệp vụ ở `docs/flows/06-admin.md`.
+
+**Tài khoản Admin là tài khoản riêng.** Không đăng ký hay nâng quyền được: Admin được tạo lúc khởi động backend từ cấu hình `AdminSeed` (mục 4.5). Tài khoản Admin **không có màn hình workspace**: không tạo, không được mời, không mở được workspace nào.
+
+#### Thay đổi ảnh hưởng mọi màn hình
+
+| Thay đổi | Frontend cần làm |
+|---|---|
+| **Tài khoản bị khóa giữa phiên:** mọi request với access token cũ trả **401**, kết nối SignalR bị cắt ngay | Coi 401 như hết phiên: thử refresh; refresh trả `403 ACCOUNT_LOCKED` thì về trang đăng nhập và báo tài khoản bị khóa |
+| Đăng nhập sai mật khẩu luôn trả `INVALID_CREDENTIALS`, kể cả khi tài khoản bị khóa. `ACCOUNT_LOCKED` chỉ trả khi mật khẩu đúng | Không cần đổi gì nếu đã xử lý theo `errorCode` |
+| Đăng nhập GitHub, refresh, xác minh email với tài khoản bị khóa trả `403 ACCOUNT_LOCKED` | Hiện thông báo tài khoản bị khóa |
+| `GET /api/workspaces/{id}/members` có thêm `accountLocked` (true khi tài khoản bị khóa hoặc đã xóa) | Hiện nhãn "đã khóa" cho Manager, gợi ý xóa thành viên đó |
+| Mời một email đã bị khóa hoặc là Admin trả **404** như email không tồn tại | Không cần đổi gì |
+| `POST /api/workspaces` bằng tài khoản Admin trả `403 ADMIN_CANNOT_USE_WORKSPACES` | Ẩn mọi lối vào workspace khi người dùng là Admin |
+
+#### API
+
+| Method | Route | Việc |
+|---|---|---|
+| GET | `users?page&pageSize&search&role&status` | Danh sách user. `page ≥ 1`, `pageSize` 1–100 (mặc định 20), `search` tìm theo email hoặc tên (≤ 100 ký tự), `role` = `Developer`/`Administrator`, `status` = `Active`/`Locked`/`Removed`. Mỗi dòng có thêm `gitHubUsername` |
+| PATCH | `users/{id}/status` | Body `{ "status": "Locked" }`. Khóa thì thu hồi mọi phiên và gửi email cho người đó |
+| ~~PATCH~~ | ~~`users/{id}/role`~~ | **Đã xóa** (trả 404). Bỏ nút đổi role |
+| GET | `users/{id}/activity` | Như cũ |
+| GET | `action-logs?page&pageSize&action&adminUserId` | Nhật ký thao tác của Admin, mới nhất trước. `action` = `StatusChanged`/`RoleChanged`/`SettingsChanged`. Dòng đổi cấu hình có `targetUserId = null` và `subject` là tên trường |
+| GET | `settings` | Cấu hình nền tảng, kèm `revision` và `limits` (chỉ đọc) |
+| PUT | `settings` | Gửi **đủ** các trường cùng `revision` vừa đọc |
+| GET | `ai/usage?from&to` | Số lần gọi AI theo ngày và luồng (mặc định 30 ngày gần nhất, tối đa 365 ngày, giờ UTC) |
+| GET | `monitoring/overview` | Số đếm của cả nền tảng |
+
+**Quy tắc đổi trạng thái tài khoản:**
+
+| Trường hợp | Kết quả |
+|---|---|
+| Đổi trạng thái của chính mình | `400 SELF_ACTION_NOT_ALLOWED` |
+| Đổi trạng thái của một tài khoản Admin khác | `403 ADMIN_ACCOUNT_PROTECTED` (ẩn nút với dòng có `role = Administrator`) |
+| Đổi sang đúng trạng thái đang có | `400 NO_CHANGE` |
+| Đổi trạng thái của tài khoản `Removed` | `409 ACCOUNT_REMOVED_FINAL` (`Removed` là vĩnh viễn; `Locked` mở lại được) |
+
+#### Cấu hình nền tảng (`settings`)
+
+```json
+{
+  "complexityBudgetPerDeveloper": 10,
+  "defaultDriftThreshold": 0.75,
+  "maintenanceCommitPatterns": ["fix typo", "refactor", "bump version", "format code"],
+  "revision": 0,
+  "updatedAt": null,
+  "updatedByUserId": null,
+  "limits": {
+    "minBudgetPerDeveloper": 5, "maxBudgetPerDeveloper": 50,
+    "minPatterns": 1, "maxPatterns": 30, "minPatternLength": 3, "maxPatternLength": 50,
+    "driftThresholdHardFloor": 0.65, "driftThresholdMin": 0.7, "driftThresholdMax": 0.85,
+    "managerMaxThresholdChanges": 3, "managerThresholdCooldownDays": 7
+  }
+}
+```
+
+- **Chỉ workspace tạo sau khi lưu mới nhận giá trị mới.** Workspace có sẵn giữ nguyên ngân sách và ngưỡng của nó. Nên ghi rõ điều này cạnh nút Lưu.
+- Ngân sách là số điểm cho **mỗi** dev; tổng ngân sách của workspace vẫn đọc ở `GET .../lock/check` (`budget`). **Đừng viết cứng 10** ở màn hình nào.
+- `limits` dùng để giới hạn ô nhập. Sàn 0.65, khoảng 0.70–0.85 và 3 lần/7 ngày là luật của Manager: chỉ hiện, Admin không sửa được.
+- Mẫu commit được lưu đã cắt khoảng trắng và đổi thành chữ thường. Một message khớp khi **chứa** mẫu (không phân biệt hoa thường), nên mẫu ngắn như `fix` khớp cả "prefix"; nên ghi chú cạnh ô nhập. BUILD chỉ bỏ qua AI khi mọi message khớp **và** mọi file là config, tài liệu hoặc chỉ đổi khoảng trắng và comment.
+- **Lỗi khi lưu:** `409 SETTINGS_CHANGED_BY_OTHER` khi `revision` đã cũ (Admin khác vừa lưu): tải lại rồi cho sửa tiếp. `400 NO_CHANGE` khi không có gì khác. `400 VALIDATION_FAILED` khi ngân sách ngoài 5–50, ngưỡng ngoài 0.70–0.85 hoặc quá 2 chữ số thập phân, hoặc mẫu sai luật (1–30 mẫu, mỗi mẫu 3–50 ký tự, không trùng).
+
+#### Báo cáo
+
+**`ai/usage`:** mỗi dòng là một ngày (UTC) và một luồng có gọi AI.
+
+```json
+{
+  "from": "2026-10-24T22:44:00Z", "to": "2026-11-23T22:44:00Z",
+  "rows": [{
+    "day": "2026-11-22T00:00:00Z", "purpose": "BuildAnalysis",
+    "calls": 3, "succeeded": 2, "rateLimited": 1, "providerUnavailable": 0, "invalidOutput": 0, "cancelled": 0,
+    "inputTokens": 150, "outputTokens": 30, "thinkingTokens": 10, "averageDurationMs": 2100
+  }]
+}
+```
+
+`purpose` là `DefineAnalysis`, `ComplexityScoring`, `PersonaConflict` hoặc `BuildAnalysis`. `from`/`to` nhận ngày (`2026-11-01`) hoặc thời điểm, coi là UTC; `from` phải trước `to`, khoảng tối đa 365 ngày (sai thì `400 VALIDATION_FAILED`). Không có nội dung prompt hay câu trả lời của AI.
+
+**`monitoring/overview`:**
+
+```json
+{
+  "generatedAt": "…",
+  "usersByRole": { "Developer": 4, "Administrator": 1 },
+  "usersByStatus": { "Active": 5, "Locked": 0, "Removed": 0 },
+  "newUsersLast30Days": 2,
+  "workspacesByStatus": { "Active": 4, "Archived": 17 },
+  "submissionsByStatus": { "Analyzing": 0, "Superseded": 0, "InScope": 0, "Drift": 0, "SkippedMaintenance": 0, "Approved": 0, "Failed": 0 },
+  "submissionsStuckAnalyzing": 0,
+  "driftAlertsByStatus": { "Unresolved": 0, "Acknowledged": 0, "Overridden": 0, "Resolved": 0 },
+  "auditRecordsByType": { "GOVERNANCE_DILUTION": 6, "SCOPE_BYPASS": 5, "SOLO_OVERRIDE_LOGGED": 2, "DIRECT_PUSH_DETECTED": 4, "SYSTEM_ALERT": 2 }
+}
+```
+
+Mọi trạng thái luôn có mặt (giá trị 0 nếu không có), nên bảng hiển thị có số dòng cố định. `submissionsStuckAnalyzing` là số lần submit vẫn đang phân tích sau hơn 10 phút: nên tô đỏ khi khác 0.
+
 ---
 
 ## 3. Luồng GitHub (OAuth) cho Frontend
@@ -492,6 +592,7 @@ DB mới thì rỗng, bạn cần một tài khoản:
 
 - **Cách nhanh nhất (cần Mức 1): đăng nhập bằng GitHub.** Tài khoản được tạo và đã xác minh email ngay, **không cần Resend**.
 - **Đăng ký bằng email:** cần `Resend:ApiKey` thật và một địa chỉ email thật, vì mã xác minh được gửi qua email. Không có khóa thì bước đăng ký lỗi.
+- **Tài khoản Admin (để làm màn hình Admin):** điền mục `AdminSeed` trong `appsettings.Development.json` (`Email`, `Password` có ít nhất 8 ký tự, 1 chữ hoa, 1 chữ số, và `DisplayName` tùy chọn) rồi chạy lại backend. Tài khoản được tạo một lần, đã xác minh email; lần chạy sau không đổi mật khẩu. Email đó không được trùng với một tài khoản Developer có sẵn.
 
 ### 4.6. Mức 1: GitHub OAuth App của riêng bạn
 
@@ -586,3 +687,9 @@ Tài khoản mẫu cho DEFINE và LOCK nằm trong `define-demo-data.md` (file *
 - [ ] Màn hình SHIP (mục 2.12): vẽ từ `readiness`, hiện token và đường dẫn file cho Manager, kết quả từng bước kiểm, xử lý `SHIP_RATE_LIMITED` bằng `retryAfter`, và `SHIP_VERSION_NOT_LATEST` bằng cách tải lại.
 - [ ] Ship Card: hiện 7 phần điểm, bật/tắt công khai, trang công khai theo `publicSlug` gọi `verify`.
 - [ ] Next Best Action xử lý hành động `ShipVersion` (chỉ Manager nhận).
+- [ ] 401 giữa phiên (tài khoản vừa bị khóa): thử refresh, gặp `ACCOUNT_LOCKED` thì về trang đăng nhập (mục 2.13).
+- [ ] Danh sách thành viên hiện nhãn khi `accountLocked = true`.
+- [ ] Tài khoản Admin: không có màn hình workspace; bỏ nút đổi role; ẩn nút khóa với dòng là Admin (`ADMIN_ACCOUNT_PROTECTED`).
+- [ ] Màn hình cấu hình: giới hạn ô nhập theo `limits`, gửi kèm `revision`, xử lý `SETTINGS_CHANGED_BY_OTHER` bằng cách tải lại, ghi rõ chỉ workspace mới nhận giá trị mới.
+- [ ] Không viết cứng ngân sách 10 điểm/dev; đọc `budget` từ `GET .../lock/check`.
+- [ ] Màn hình báo cáo: `ai/usage` theo ngày và luồng, `monitoring/overview`.

@@ -6,12 +6,21 @@ namespace ShipMate.API.Hubs;
 public class SignalRWorkspaceNotifier : IWorkspaceNotifier
 {
     private readonly IHubContext<WorkspaceHub> _hub;
+    private readonly HubConnectionRegistry _registry;
     private readonly ILogger<SignalRWorkspaceNotifier> _logger;
 
-    public SignalRWorkspaceNotifier(IHubContext<WorkspaceHub> hub, ILogger<SignalRWorkspaceNotifier> logger)
+    public SignalRWorkspaceNotifier(
+        IHubContext<WorkspaceHub> hub, HubConnectionRegistry registry, ILogger<SignalRWorkspaceNotifier> logger)
     {
         _hub = hub;
+        _registry = registry;
         _logger = logger;
+    }
+
+    public Task DisconnectUserAsync(Guid userId)
+    {
+        _registry.AbortAll(userId);
+        return Task.CompletedTask;
     }
 
     public Task PublishAsync(Guid workspaceId, string eventName, object payload) =>

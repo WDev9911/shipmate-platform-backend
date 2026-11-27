@@ -13,7 +13,7 @@ public record ChallengeRecommendation(ChallengeAction? Action, GateFeature? Feat
 public static class ChallengeRecommendationPolicy
 {
     public static ChallengeRecommendation Recommend(
-        IReadOnlyList<GateFeature> activeFeatures, int newComplexity, IReadOnlyList<int?> memberSkills)
+        IReadOnlyList<GateFeature> activeFeatures, int newComplexity, IReadOnlyList<int?> memberSkills, int budgetPerDeveloper)
     {
         var skillCeiling = memberSkills.Where(s => s is not null).Select(s => s!.Value).DefaultIfEmpty(0).Max();
         if (newComplexity > skillCeiling)
@@ -21,7 +21,7 @@ public static class ChallengeRecommendationPolicy
             return new ChallengeRecommendation(ChallengeAction.Backup, null);
         }
 
-        var budget = LockGatePolicy.BudgetPerDeveloper * memberSkills.Count;
+        var budget = budgetPerDeveloper * memberSkills.Count;
         var total = activeFeatures.Sum(f => f.Complexity ?? 0);
         if (total + newComplexity <= budget)
         {

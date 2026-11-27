@@ -34,7 +34,7 @@ public class RepoRevocationTests
             Substitute.For<IProductDefinitionRepository>(), Substitute.For<IUserRepository>(),
             Substitute.For<IGitHubConnectionRepository>(), Substitute.For<IGitHubOAuthService>(), _app,
             Substitute.For<IEncryptionService>(), Substitute.For<IEmailSender>(),
-            Substitute.For<IWorkspaceNotifier>(), _audit, Substitute.For<IFeatureAssignmentRepository>(), Substitute.For<IMapper>());
+            Substitute.For<IWorkspaceNotifier>(), _audit, Substitute.For<IFeatureAssignmentRepository>(), Substitute.For<IPlatformSettingsRepository>(), Substitute.For<IMapper>());
 
         _guard.GetWorkspaceAsManagerAsync(_managerId, _workspace.Id).Returns(_workspace);
         _members.GetByWorkspaceIdAsync(_workspace.Id).Returns(_ => []);

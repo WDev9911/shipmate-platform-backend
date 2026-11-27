@@ -36,6 +36,7 @@ public class SkillProfileTests
             _notifier,
             Substitute.For<IAuditTrail>(),
             Substitute.For<IFeatureAssignmentRepository>(),
+            Substitute.For<IPlatformSettingsRepository>(),
             MapperReturningADto());
     }
 
